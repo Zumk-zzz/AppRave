@@ -1,31 +1,55 @@
-# Секреты и локальные настройки
-.claude/settings.local.json
-.env
-.env.*
-!.env.example
-*.local
+# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
 
-# ОС
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-$RECYCLE.BIN/
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
 .DS_Store
+*.pem
 
-# Редакторы и IDE
-.vscode/
+# local env files
+.env
+.env*.local
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# editors
 .idea/
 *.swp
-*.swo
-*~
 
-# Логи и временные файлы
-*.log
-logs/
-tmp/
-temp/
+# OS
+Thumbs.db
+Desktop.ini
 
-# Сборка
-build/
-dist/
-out/
+# typescript
+*.tsbuildinfo
+
+app-example
+
+# generated native folders
+/ios
+/android
