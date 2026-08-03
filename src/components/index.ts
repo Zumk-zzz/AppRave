@@ -4,6 +4,7 @@ export { Card, type CardProps } from './Card';
 export { Chip, ChipRow, type ChipProps } from './Chip';
 export { Screen, type ScreenProps } from './Screen';
 export { SectionHeader, type SectionHeaderProps } from './SectionHeader';
+export { Skeleton, SkeletonGroup, type SkeletonProps } from './Skeleton';
 export { Sheet, type SheetProps } from './Sheet';
 export { Stepper, type StepperProps } from './Stepper';
 export { Text, type TextProps, type TextTone, type TextVariant } from './Text';

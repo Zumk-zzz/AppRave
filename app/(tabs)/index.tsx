@@ -1,10 +1,11 @@
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, RefreshControl, StyleSheet, View } from 'react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import { RefreshControl, StyleSheet, View } from 'react-native';
+import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 
 import { Button, Chip, ChipRow, Screen, SectionHeader, Text } from '@/src/components';
 import { EventCardCompact, EventCardFeatured } from '@/src/features/events/EventCard';
+import { EventSkeletonCompact, EventSkeletonFeatured } from '@/src/features/events/EventSkeleton';
 import { GENRE_LABEL } from '@/src/lib/events';
 import { eventsService, type ClubEvent, type Genre } from '@/src/services';
 import { useAuthStore } from '@/src/store/auth';
@@ -23,10 +24,16 @@ export default function AfishaTab() {
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<Filter>('all');
 
+  // Растёт при каждой удачной загрузке. Уходит в key списка, чтобы карточки
+  // перемонтировались и заново проиграли появление: entering срабатывает
+  // только при монтировании, иначе после обновления список менялся бы рывком.
+  const [revision, setRevision] = useState(0);
+
   const load = useCallback(async () => {
     setFailed(false);
     try {
       setEvents(await eventsService.list());
+      setRevision((r) => r + 1);
     } catch {
       setFailed(true);
     }
@@ -84,8 +91,13 @@ export default function AfishaTab() {
       </ChipRow>
 
       {events === null && !failed && (
-        <View style={styles.center}>
-          <ActivityIndicator color={colors.accent} />
+        <View style={[styles.padded, styles.skeletons]}>
+          <EventSkeletonFeatured />
+          <View style={styles.list}>
+            <EventSkeletonCompact />
+            <EventSkeletonCompact />
+            <EventSkeletonCompact />
+          </View>
         </View>
       )}
 
@@ -106,19 +118,24 @@ export default function AfishaTab() {
         </View>
       )}
 
+      {/* Ключ включает фильтр и ревизию: и обновление, и смена жанра
+          перемонтируют список, поэтому анимация проигрывается заново */}
       {featured && (
-        <View style={styles.padded}>
+        <Animated.View
+          key={`featured-${filter}-${revision}`}
+          entering={FadeIn.duration(320)}
+          style={styles.padded}
+        >
           <EventCardFeatured event={featured} onPress={() => openEvent(featured.id)} />
-        </View>
+        </Animated.View>
       )}
 
       {rest.length > 0 && (
         <View style={[styles.padded, styles.rest]}>
           <SectionHeader title="Дальше в клубе" kicker="Расписание" />
-          <View style={styles.list}>
+          <View key={`list-${filter}-${revision}`} style={styles.list}>
             {rest.map((event, i) => (
-              // Лёгкая лесенка появления: список читается как последовательность,
-              // а не вспыхивает целиком
+              // Лесенка: список читается как последовательность, а не вспыхивает целиком
               <Animated.View key={event.id} entering={FadeInDown.delay(i * 60).duration(260)}>
                 <EventCardCompact event={event} onPress={() => openEvent(event.id)} />
               </Animated.View>
@@ -161,6 +178,9 @@ const styles = StyleSheet.create({
   },
   centerText: {
     textAlign: 'center',
+  },
+  skeletons: {
+    gap: spacing.xxl,
   },
   // Запас снизу под плавающую панель заказа
   scrollBody: {
