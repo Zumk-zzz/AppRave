@@ -13,6 +13,8 @@ export interface CartItem {
   qty: number;
   /** К какому событию относится билет или бронь */
   eventId?: string;
+  /** Гостевой список брони — имена, которые попадут на фейс-контроль */
+  guests?: string[];
 }
 
 export interface AddInput {
@@ -24,6 +26,7 @@ export interface AddInput {
   price: number;
   eventId?: string;
   qty?: number;
+  guests?: string[];
   /**
    * Товар в единственном экземпляре — стол нельзя забронировать дважды.
    * Повторное добавление не увеличивает количество, а обновляет строку.
@@ -58,7 +61,13 @@ export const useCartStore = create<CartState>((set) => ({
       if (existing) {
         return {
           items: state.items.map((i) =>
-            i.lineId === lineId ? { ...i, qty: input.unique ? addQty : i.qty + addQty } : i,
+            i.lineId === lineId
+              ? {
+                  ...i,
+                  qty: input.unique ? addQty : i.qty + addQty,
+                  guests: input.guests ?? i.guests,
+                }
+              : i,
           ),
         };
       }
@@ -71,6 +80,7 @@ export const useCartStore = create<CartState>((set) => ({
         price: input.price,
         qty: addQty,
         eventId: input.eventId,
+        guests: input.guests,
       };
 
       return { items: [...state.items, next] };

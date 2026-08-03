@@ -55,6 +55,32 @@ export interface EventsService {
   byId(id: string): Promise<ClubEvent | null>;
 }
 
+export type TableZone = 'vip' | 'lounge' | 'bar';
+
+export interface ClubTable {
+  id: string;
+  /** Короткая метка на схеме: V1, L3 */
+  label: string;
+  zone: TableZone;
+  seats: number;
+  /** Минимальный депозит; полностью идёт в счёт заказа */
+  deposit: number;
+  taken: boolean;
+  /**
+   * Положение и размер на схеме зала в долях от 0 до 1.
+   * Доли, а не пиксели, — схема тянется под любую ширину экрана.
+   */
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface BookingService {
+  /** Столы на конкретное событие — занятость зависит от даты */
+  tablesFor(eventId: string): Promise<ClubTable[]>;
+}
+
 export interface AuthService {
   /** Отправить код на номер. Возвращает, куда именно отправлен. */
   requestCode(phone: string): Promise<{ sentTo: string }>;
