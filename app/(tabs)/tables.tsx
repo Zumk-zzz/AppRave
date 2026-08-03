@@ -1,4 +1,5 @@
 import * as Haptics from 'expo-haptics';
+import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
@@ -22,13 +23,16 @@ export default function TablesTab() {
   const [guests, setGuests] = useState<string[]>([]);
   const [guestsOpen, setGuestsOpen] = useState(false);
 
-  useEffect(() => {
-    void (async () => {
-      const list = await eventsService.list();
-      setEvents(list);
-      setEventId((current) => current ?? list[0]?.id ?? null);
-    })();
-  }, []);
+  // Перечитываем при фокусе: админ мог поменять депозиты или снять стол
+  useFocusEffect(
+    useCallback(() => {
+      void (async () => {
+        const list = await eventsService.list();
+        setEvents(list);
+        setEventId((current) => current ?? list[0]?.id ?? null);
+      })();
+    }, []),
+  );
 
   const loadTables = useCallback(async (id: string) => {
     setTables(null);

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { Badge, Card, Chip, ChipRow, Screen, Stepper, Text } from '@/src/components';
@@ -20,14 +21,17 @@ export default function BarTab() {
   const [menu, setMenu] = useState<BarItem[] | null>(null);
   const [filter, setFilter] = useState<Filter>('all');
 
-  useEffect(() => {
-    void (async () => {
-      const [list, loadedMenu] = await Promise.all([eventsService.list(), barService.menu()]);
-      setEvents(list);
-      setEventId((current) => current ?? list[0]?.id ?? null);
-      setMenu(loadedMenu);
-    })();
-  }, []);
+  // Перечитываем при фокусе: админ мог добавить позицию или снять её с продажи
+  useFocusEffect(
+    useCallback(() => {
+      void (async () => {
+        const [list, loadedMenu] = await Promise.all([eventsService.list(), barService.menu()]);
+        setEvents(list);
+        setEventId((current) => current ?? list[0]?.id ?? null);
+        setMenu(loadedMenu);
+      })();
+    }, []),
+  );
 
   const counts = useMemo(() => {
     const map = new Map<BarCategory, number>();

@@ -3,6 +3,9 @@ import { InvalidCodeError, type AuthService, type User } from './types';
 /** Код, который принимает мок. Показан на экране ввода. */
 export const DEMO_CODE = '0000';
 
+/** Вход по этому номеру даёт роль администратора. */
+export const ADMIN_PHONE = '+79000000000';
+
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
@@ -23,12 +26,15 @@ export const mockAuthService: AuthService = {
       throw new InvalidCodeError();
     }
 
+    const isAdmin = phone === ADMIN_PHONE;
+
     const user: User = {
-      id: 'u_demo',
+      id: isAdmin ? 'u_admin' : 'u_demo',
       phone,
-      name: 'Гость',
+      name: isAdmin ? 'Администратор' : 'Гость',
+      role: isAdmin ? 'admin' : 'guest',
       tier: 'silver',
-      points: 120,
+      points: isAdmin ? 0 : 120,
       memberNo: buildMemberNo(phone),
       joinedAt: new Date().toISOString(),
     };

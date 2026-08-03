@@ -47,6 +47,23 @@ export default function ProfileTab() {
         <Stat value={user.memberNo} label="Карта" />
       </View>
 
+      {/* Раздел существует только для админа: у гостя нет ни пункта меню,
+          ни самого маршрута — он закрыт guard'ом в корневом layout */}
+      {user.role === 'admin' && (
+        <Card style={styles.adminCard} onPress={() => router.push('/admin')}>
+          <View style={styles.adminIcon}>
+            <Ionicons name="construct" size={20} color={colors.onAccent} />
+          </View>
+          <View style={styles.flex}>
+            <Text variant="bodyStrong">Администрирование</Text>
+            <Text variant="caption" tone="muted">
+              Афиша, меню, склад, заказы
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />
+        </Card>
+      )}
+
       <View style={styles.menu}>
         <Row
           icon="ticket-outline"
@@ -167,6 +184,23 @@ const styles = StyleSheet.create({
   stat: {
     flex: 1,
     gap: spacing.xs,
+  },
+  adminCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    marginTop: spacing.xl,
+  },
+  adminIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent,
+  },
+  flex: {
+    flex: 1,
   },
   menu: {
     marginTop: spacing.xxl,

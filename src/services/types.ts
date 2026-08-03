@@ -8,10 +8,14 @@
 
 export type LoyaltyTier = 'silver' | 'gold' | 'black';
 
+/** Роль определяет, видит ли пользователь раздел администрирования. */
+export type UserRole = 'guest' | 'admin';
+
 export interface User {
   id: string;
   phone: string;
   name: string;
+  role: UserRole;
   tier: LoyaltyTier;
   /** Накопленные баллы лояльности */
   points: number;
@@ -110,7 +114,13 @@ export interface ClubTable {
   seats: number;
   /** Минимальный депозит; полностью идёт в счёт заказа */
   deposit: number;
+  /** Занят на конкретную дату — вычисляется, в каталоге не хранится */
   taken: boolean;
+  /**
+   * Снят с продажи администратором: ремонт, служебная бронь.
+   * В отличие от taken действует на все даты сразу.
+   */
+  blocked: boolean;
   /**
    * Положение и размер на схеме зала в долях от 0 до 1.
    * Доли, а не пиксели, — схема тянется под любую ширину экрана.
@@ -124,6 +134,56 @@ export interface ClubTable {
 export interface BookingService {
   /** Столы на конкретное событие — занятость зависит от даты */
   tablesFor(eventId: string): Promise<ClubTable[]>;
+}
+
+export type StockMoveKind = 'receipt' | 'writeoff' | 'sale' | 'correction';
+
+export interface StockItem {
+  barItemId: string;
+  /** Остаток на складе */
+  qty: number;
+  /** Единица измерения: бутылки, порции, банки */
+  unit: string;
+  /** Ниже этого значения позиция попадает в «заканчивается» */
+  lowThreshold: number;
+}
+
+export interface StockMove {
+  id: string;
+  barItemId: string;
+  kind: StockMoveKind;
+  /** Со знаком: приход положительный, расход отрицательный */
+  delta: number;
+  comment?: string;
+  createdAt: string;
+  /** Для продаж — из какого заказа списано */
+  orderId?: string;
+}
+
+export interface InventoryService {
+  stock(): Promise<StockItem[]>;
+  /** Журнал движений, новые первыми. Без аргумента — по всем позициям. */
+  moves(barItemId?: string): Promise<StockMove[]>;
+  apply(input: {
+    barItemId: string;
+    kind: StockMoveKind;
+    delta: number;
+    comment?: string;
+    orderId?: string;
+  }): Promise<void>;
+}
+
+/** Операции записи. Доступны только пользователю с ролью admin. */
+export interface AdminService {
+  saveEvent(event: ClubEvent): Promise<void>;
+  deleteEvent(id: string): Promise<void>;
+  saveBarItem(item: BarItem, stock?: Partial<StockItem>): Promise<void>;
+  deleteBarItem(id: string): Promise<void>;
+  saveTable(table: ClubTable): Promise<void>;
+  /** Уменьшить остаток билетов после продажи */
+  consumeTickets(eventId: string, ticketTypeId: string, qty: number): Promise<void>;
+  /** Вернуть каталог к демонстрационным данным */
+  resetCatalog(): Promise<void>;
 }
 
 export interface AuthService {

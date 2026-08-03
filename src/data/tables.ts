@@ -17,7 +17,7 @@ export const FLOOR_FIXTURES = [
  * Схема зала. Координаты — доли ширины и высоты контейнера,
  * поэтому один и тот же макет корректно ложится на любой размер экрана.
  */
-const LAYOUT: Omit<ClubTable, 'taken'>[] = [
+export const DEFAULT_TABLES: Omit<ClubTable, 'taken' | 'blocked'>[] = [
   // VIP по бокам от сцены
   { id: 't_v1', label: 'V1', zone: 'vip', seats: 6, deposit: 25000, x: 0.03, y: 0.16, w: 0.17, h: 0.11 },
   { id: 't_v2', label: 'V2', zone: 'vip', seats: 6, deposit: 25000, x: 0.03, y: 0.31, w: 0.17, h: 0.11 },
@@ -41,13 +41,19 @@ const LAYOUT: Omit<ClubTable, 'taken'>[] = [
  * Занятость зависит от события: на популярной вечеринке свободных столов
  * меньше. Считается детерминированно от id, чтобы схема не «прыгала»
  * при каждом открытии экрана.
+ *
+ * Стол, снятый администратором (blocked), занят на любую дату — это
+ * ремонт или служебная бронь, а не чужой заказ.
  */
-export function tablesForEvent(eventId: string): ClubTable[] {
+export function computeOccupancy(
+  layout: Omit<ClubTable, 'taken'>[],
+  eventId: string,
+): ClubTable[] {
   const seed = hash(eventId);
 
-  return LAYOUT.map((table, i) => ({
+  return layout.map((table, i) => ({
     ...table,
-    taken: (seed + i * 7) % 5 === 0,
+    taken: table.blocked || (seed + i * 7) % 5 === 0,
   }));
 }
 

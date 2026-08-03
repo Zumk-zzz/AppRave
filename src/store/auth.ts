@@ -26,7 +26,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const raw = await SecureStore.getItemAsync(SESSION_KEY);
       if (raw) {
-        set({ user: JSON.parse(raw) as User, status: 'authed' });
+        const saved = JSON.parse(raw) as User;
+        // Сессии, записанные до появления ролей, поля role не содержат.
+        // Без подстановки такой пользователь оказался бы с undefined
+        // вместо роли, и проверки доступа вели бы себя непредсказуемо.
+        set({ user: { ...saved, role: saved.role ?? 'guest' }, status: 'authed' });
         return;
       }
     } catch {

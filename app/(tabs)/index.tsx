@@ -1,5 +1,5 @@
-import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useMemo, useState } from 'react';
 import { RefreshControl, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 
@@ -39,9 +39,13 @@ export default function AfishaTab() {
     }
   }, []);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  // Перечитываем при каждом возврате на экран, а не один раз при монтировании:
+  // иначе правки из админки гость увидит только после перезапуска.
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+    }, [load]),
+  );
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
