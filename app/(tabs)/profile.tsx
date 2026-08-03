@@ -19,6 +19,7 @@ export default function ProfileTab() {
 
   if (!user) return null;
 
+  const isAdmin = user.role === 'admin';
   const initial = user.name.trim().charAt(0).toUpperCase() || 'Г';
 
   return (
@@ -39,17 +40,25 @@ export default function ProfileTab() {
           </Text>
         </View>
 
-        <Badge label={TIER_LABEL[user.tier]} tone={TIER_TONE[user.tier]} />
+        {isAdmin ? (
+          <Badge label="Админ" tone="accent" />
+        ) : (
+          <Badge label={TIER_LABEL[user.tier]} tone={TIER_TONE[user.tier]} />
+        )}
       </Card>
 
-      <View style={styles.stats}>
-        <Stat value={String(user.points)} label="Баллов" />
-        <Stat value={user.memberNo} label="Карта" />
-      </View>
+      {/* Уровень, баллы и номер карты показывают нули у администратора:
+          он не покупает. Лишние пустые метрики только сбивают с толку. */}
+      {!isAdmin && (
+        <View style={styles.stats}>
+          <Stat value={String(user.points)} label="Баллов" />
+          <Stat value={user.memberNo} label="Карта" />
+        </View>
+      )}
 
       {/* Раздел существует только для админа: у гостя нет ни пункта меню,
           ни самого маршрута — он закрыт guard'ом в корневом layout */}
-      {user.role === 'admin' && (
+      {isAdmin && (
         <Card style={styles.adminCard} onPress={() => router.push('/admin')}>
           <View style={styles.adminIcon}>
             <Ionicons name="construct" size={20} color={colors.onAccent} />
@@ -65,12 +74,14 @@ export default function ProfileTab() {
       )}
 
       <View style={styles.menu}>
-        <Row
-          icon="ticket-outline"
-          label="Мои заказы"
-          hint={orderCount > 0 ? String(orderCount) : undefined}
-          onPress={() => router.push('/orders')}
-        />
+        {!isAdmin && (
+          <Row
+            icon="ticket-outline"
+            label="Мои заказы"
+            hint={orderCount > 0 ? String(orderCount) : undefined}
+            onPress={() => router.push('/orders')}
+          />
+        )}
         <Row
           icon="notifications-outline"
           label="Уведомления"

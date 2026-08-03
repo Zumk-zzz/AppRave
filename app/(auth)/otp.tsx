@@ -178,7 +178,7 @@ const styles = StyleSheet.create({
   },
   cell: {
     flex: 1,
-    height: 68,
+    height: 76,
     borderRadius: radius.md,
     borderWidth: 2,
     borderColor: colors.border,
@@ -197,7 +197,11 @@ const styles = StyleSheet.create({
   },
   cellText: {
     fontFamily: fonts.display,
-    fontSize: 28,
+    fontSize: 30,
+    // lineHeight обязателен: базовый вариант Text задаёт 22, и цифра
+    // Unbounded в такую строку не помещается — верх и низ срезаются
+    lineHeight: 40,
+    textAlign: 'center',
     color: colors.text,
   },
   hiddenInput: {

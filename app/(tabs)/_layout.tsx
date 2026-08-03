@@ -3,15 +3,23 @@ import { Tabs } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 
 import { CartBar } from '@/src/features/cart/CartBar';
+import { useAuthStore } from '@/src/store/auth';
 import { colors, fonts, fontSize } from '@/src/theme';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
-const TABS: { name: string; title: string; icon: IoniconName; iconActive: IoniconName }[] = [
+const TABS: {
+  name: string;
+  title: string;
+  icon: IoniconName;
+  iconActive: IoniconName;
+  /** Вкладка для гостя: у администратора нет ни карты, ни покупок */
+  guestOnly?: boolean;
+}[] = [
   { name: 'index', title: 'Афиша', icon: 'flash-outline', iconActive: 'flash' },
   { name: 'tables', title: 'Столики', icon: 'grid-outline', iconActive: 'grid' },
   { name: 'bar', title: 'Бар', icon: 'wine-outline', iconActive: 'wine' },
-  { name: 'card', title: 'Карта', icon: 'card-outline', iconActive: 'card' },
+  { name: 'card', title: 'Карта', icon: 'card-outline', iconActive: 'card', guestOnly: true },
   { name: 'profile', title: 'Профиль', icon: 'person-outline', iconActive: 'person' },
 ];
 
@@ -26,6 +34,8 @@ export default function TabsLayout() {
 }
 
 function TabsNavigator() {
+  const isAdmin = useAuthStore((s) => s.user?.role === 'admin');
+
   return (
     <Tabs
       screenOptions={{
@@ -44,12 +54,16 @@ function TabsNavigator() {
         sceneStyle: { backgroundColor: colors.bg },
       }}
     >
-      {TABS.map(({ name, title, icon, iconActive }) => (
+      {TABS.map(({ name, title, icon, iconActive, guestOnly }) => (
         <Tabs.Screen
           key={name}
           name={name}
           options={{
             title,
+            // Экран остаётся зарегистрированным, но пропадает из таб-бара:
+            // убрать сам Tabs.Screen нельзя — expo-router ругается на файл
+            // маршрута без объявления.
+            href: guestOnly && isAdmin ? null : undefined,
             tabBarIcon: ({ color, focused, size }) => (
               <Ionicons name={focused ? iconActive : icon} size={size} color={color} />
             ),

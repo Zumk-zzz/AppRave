@@ -39,6 +39,10 @@ const toneColor: Record<TextTone, string> = {
  * Единственный способ вывести текст в приложении.
  * Компоненты не задают fontFamily напрямую — иначе шрифт неизбежно
  * разъезжается между экранами.
+ *
+ * Внимание: переопределяя fontSize через style, задавайте и lineHeight.
+ * От варианта наследуется старая высота строки, и увеличенный шрифт
+ * в неё не помещается — глифы срезаются сверху и снизу.
  */
 export function Text({ variant = 'body', tone = 'default', style, ...rest }: TextProps) {
   return <RNText style={[styles[variant], { color: toneColor[tone] }, style]} {...rest} />;
