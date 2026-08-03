@@ -5,6 +5,12 @@ export type CartKind = 'ticket' | 'table' | 'bar';
 export interface CartItem {
   /** Ключ строки. Одинаковый товар при повторном добавлении копит количество. */
   lineId: string;
+  /**
+   * Идентификатор товара внутри своего типа: тип билета, номер стола,
+   * позиция бара. Хранится отдельно, хотя и входит в lineId: разбирать
+   * составной ключ строками — верный способ однажды ошибиться.
+   */
+  refId: string;
   kind: CartKind;
   title: string;
   subtitle?: string;
@@ -83,6 +89,7 @@ export const useCartStore = create<CartState>((set) => ({
 
       const next: CartItem = {
         lineId,
+        refId: input.refId,
         kind: input.kind,
         title: input.title,
         subtitle: input.subtitle,

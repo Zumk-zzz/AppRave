@@ -7,7 +7,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { Badge, Button, Card, Screen, Stepper, Text } from '@/src/components';
 import { formatEventDate, formatPrice, pluralWithCount } from '@/src/lib/format';
 import { pointsForPurchase, tierForPoints } from '@/src/lib/loyalty';
-import { eventsService, type ClubEvent } from '@/src/services';
+import { adminService, eventsService, inventoryService, type ClubEvent } from '@/src/services';
 import { useAuthStore } from '@/src/store/auth';
 import { selectTotal, useCartStore, type CartItem } from '@/src/store/cart';
 import { useOrdersStore } from '@/src/store/orders';
@@ -55,6 +55,11 @@ export default function CheckoutScreen() {
     await new Promise((resolve) => setTimeout(resolve, 1600));
 
     const created = await checkout(items, events, user.memberNo, user.tier);
+
+    // Склад и остатки билетов приводятся в соответствие сразу после оплаты.
+    // Иначе инвентаризация показывала бы наличие товара, который уже продан.
+    await applyStockAndTickets(items, created[0]?.id);
+
     const earned = created.reduce((sum, o) => sum + o.pointsEarned, 0);
     const nextPoints = user.points + earned;
 
@@ -207,6 +212,29 @@ export default function CheckoutScreen() {
       )}
     </Screen>
   );
+}
+
+/**
+ * Списывает проданные напитки со склада и уменьшает остаток билетов.
+ *
+ * Столы не трогаем: депозит — это не товар со склада, а занятость стола
+ * считается на дату и в каталоге не хранится.
+ */
+async function applyStockAndTickets(items: CartItem[], orderId?: string) {
+  for (const line of items) {
+    if (line.kind === 'bar') {
+      await inventoryService.apply({
+        barItemId: line.refId,
+        kind: 'sale',
+        delta: -line.qty,
+        orderId,
+      });
+    }
+
+    if (line.kind === 'ticket' && line.eventId) {
+      await adminService.consumeTickets(line.eventId, line.refId, line.qty);
+    }
+  }
 }
 
 function Header({ onBack, title }: { onBack: () => void; title: string }) {
