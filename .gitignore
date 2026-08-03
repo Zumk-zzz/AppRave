@@ -1,0 +1,30 @@
+# Секреты и локальные настройки
+.env
+.env.*
+!.env.example
+*.local
+
+# ОС
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+
+# Редакторы и IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Логи и временные файлы
+*.log
+logs/
+tmp/
+temp/
+
+# Сборка
+build/
+dist/
+out/
