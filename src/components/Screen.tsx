@@ -22,6 +22,8 @@ export interface ScreenProps {
   /** Закреплённая панель внизу: «Оплатить», «Забронировать» */
   footer?: React.ReactNode;
   contentContainerStyle?: ScrollViewProps['contentContainerStyle'];
+  /** Потянуть-обновить. Работает только вместе со scroll. */
+  refreshControl?: ScrollViewProps['refreshControl'];
   style?: StyleProp<ViewStyle>;
 }
 
@@ -32,6 +34,7 @@ export function Screen({
   edgeToEdgeTop = false,
   footer,
   contentContainerStyle,
+  refreshControl,
   style,
 }: ScreenProps) {
   const insets = useSafeAreaInsets();
@@ -53,6 +56,7 @@ export function Screen({
             contentContainerStyle,
           ]}
           showsVerticalScrollIndicator={false}
+          refreshControl={refreshControl}
         >
           {children}
         </ScrollView>

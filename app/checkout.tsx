@@ -6,7 +6,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Badge, Button, Card, Screen, Stepper, Text } from '@/src/components';
 import { formatEventDate, formatPrice, pluralWithCount } from '@/src/lib/format';
-import { pointsForPurchase } from '@/src/lib/loyalty';
+import { pointsForPurchase, tierForPoints } from '@/src/lib/loyalty';
 import { eventsService, type ClubEvent } from '@/src/services';
 import { useAuthStore } from '@/src/store/auth';
 import { selectTotal, useCartStore, type CartItem } from '@/src/store/cart';
@@ -43,7 +43,7 @@ export default function CheckoutScreen() {
     return [...map.entries()];
   }, [items]);
 
-  const points = pointsForPurchase(total);
+  const points = user ? pointsForPurchase(total, user.tier) : 0;
 
   const handlePay = async () => {
     if (!user || items.length === 0 || paying) return;
@@ -54,10 +54,13 @@ export default function CheckoutScreen() {
     // появится на этапе dev build - в Expo Go нативный SDK не поднять.
     await new Promise((resolve) => setTimeout(resolve, 1600));
 
-    const created = await checkout(items, events, user.memberNo);
+    const created = await checkout(items, events, user.memberNo, user.tier);
     const earned = created.reduce((sum, o) => sum + o.pointsEarned, 0);
+    const nextPoints = user.points + earned;
 
-    patchUser({ points: user.points + earned });
+    // Уровень пересчитывается тут же: иначе повышение заметят только
+    // после перезапуска, и начисление пойдёт по старой ставке.
+    patchUser({ points: nextPoints, tier: tierForPoints(nextPoints) });
     clearCart();
 
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);

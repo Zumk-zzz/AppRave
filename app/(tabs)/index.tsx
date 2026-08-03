@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, RefreshControl, StyleSheet, View } from 'react-native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import { Button, Chip, ChipRow, Screen, SectionHeader, Text } from '@/src/components';
 import { EventCardCompact, EventCardFeatured } from '@/src/features/events/EventCard';
@@ -19,6 +20,7 @@ export default function AfishaTab() {
 
   const [events, setEvents] = useState<ClubEvent[] | null>(null);
   const [failed, setFailed] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<Filter>('all');
 
   const load = useCallback(async () => {
@@ -34,6 +36,12 @@ export default function AfishaTab() {
     void load();
   }, [load]);
 
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  }, [load]);
+
   const visible = useMemo(() => {
     if (!events) return [];
     return filter === 'all' ? events : events.filter((e) => e.genre === filter);
@@ -44,7 +52,18 @@ export default function AfishaTab() {
   const [featured, ...rest] = visible;
 
   return (
-    <Screen scroll padded={false} contentContainerStyle={styles.scrollBody}>
+    <Screen
+      scroll
+      padded={false}
+      contentContainerStyle={styles.scrollBody}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
+          tintColor={colors.accent}
+        />
+      }
+    >
       <View style={styles.header}>
         <Text variant="label" tone="accent">
           {greeting()}
@@ -97,8 +116,12 @@ export default function AfishaTab() {
         <View style={[styles.padded, styles.rest]}>
           <SectionHeader title="Дальше в клубе" kicker="Расписание" />
           <View style={styles.list}>
-            {rest.map((event) => (
-              <EventCardCompact key={event.id} event={event} onPress={() => openEvent(event.id)} />
+            {rest.map((event, i) => (
+              // Лёгкая лесенка появления: список читается как последовательность,
+              // а не вспыхивает целиком
+              <Animated.View key={event.id} entering={FadeInDown.delay(i * 60).duration(260)}>
+                <EventCardCompact event={event} onPress={() => openEvent(event.id)} />
+              </Animated.View>
             ))}
           </View>
         </View>

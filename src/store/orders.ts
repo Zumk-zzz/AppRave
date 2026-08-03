@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 
 import { pointsForPurchase } from '@/src/lib/loyalty';
-import type { ClubEvent, Order, OrderLine } from '@/src/services';
+import type { ClubEvent, LoyaltyTier, Order, OrderLine } from '@/src/services';
 import type { CartItem } from './cart';
 
 // Заказы не секретны, поэтому AsyncStorage, а не secure-store:
@@ -14,7 +14,12 @@ interface OrdersState {
   loaded: boolean;
   load: () => Promise<void>;
   /** Превратить корзину в заказы — по одному на каждую вечеринку. */
-  checkout: (items: CartItem[], events: ClubEvent[], memberNo: string) => Promise<Order[]>;
+  checkout: (
+    items: CartItem[],
+    events: ClubEvent[],
+    memberNo: string,
+    tier: LoyaltyTier,
+  ) => Promise<Order[]>;
   markUsed: (orderId: string) => void;
 }
 
@@ -32,7 +37,7 @@ export const useOrdersStore = create<OrdersState>((set, get) => ({
     }
   },
 
-  async checkout(items, events, memberNo) {
+  async checkout(items, events, memberNo, tier) {
     // Один заказ на вечеринку: на входе сканируют один QR за одну ночь,
     // а не общий чек на несколько дат.
     const byEvent = new Map<string, CartItem[]>();
@@ -56,7 +61,7 @@ export const useOrdersStore = create<OrdersState>((set, get) => ({
         eventDate: event?.date,
         lines: lines.map(toOrderLine),
         total,
-        pointsEarned: pointsForPurchase(total),
+        pointsEarned: pointsForPurchase(total, tier),
         status: 'paid',
         qrPayload: `APPRAVE|${id}|${memberNo}|${event?.id ?? '-'}`,
       });
