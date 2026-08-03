@@ -10,6 +10,7 @@ import { useEffect } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import 'react-native-reanimated';
 
+import { useAuthStore } from '@/src/store/auth';
 import { colors } from '@/src/theme';
 
 // Держим сплэш до загрузки шрифтов, иначе на старте мелькает системный шрифт.
@@ -24,17 +25,29 @@ export default function RootLayout() {
     Inter_600SemiBold,
   });
 
+  const status = useAuthStore((s) => s.status);
+  const restore = useAuthStore((s) => s.restore);
+
   useEffect(() => {
-    // Прячем сплэш и при ошибке загрузки шрифтов тоже — иначе приложение
-    // навсегда останется на заставке. Системный шрифт лучше чёрного экрана.
-    if (fontsLoaded || fontError) {
+    void restore();
+  }, [restore]);
+
+  const fontsReady = fontsLoaded || fontError;
+  const authReady = status !== 'loading';
+
+  useEffect(() => {
+    // Прячем сплэш и при ошибке шрифтов тоже — иначе приложение навсегда
+    // останется на заставке. Системный шрифт лучше чёрного экрана.
+    if (fontsReady && authReady) {
       SplashScreen.hideAsync();
     }
-  }, [fontsLoaded, fontError]);
+  }, [fontsReady, authReady]);
 
-  if (!fontsLoaded && !fontError) {
+  if (!fontsReady || !authReady) {
     return null;
   }
+
+  const isAuthed = status === 'authed';
 
   return (
     <SafeAreaProvider>
@@ -44,7 +57,16 @@ export default function RootLayout() {
           contentStyle: { backgroundColor: colors.bg },
           animation: 'fade',
         }}
-      />
+      >
+        {/* Роутер сам перебросит между группами, когда guard изменится */}
+        <Stack.Protected guard={!isAuthed}>
+          <Stack.Screen name="(auth)" />
+        </Stack.Protected>
+
+        <Stack.Protected guard={isAuthed}>
+          <Stack.Screen name="(tabs)" />
+        </Stack.Protected>
+      </Stack>
     </SafeAreaProvider>
   );
 }

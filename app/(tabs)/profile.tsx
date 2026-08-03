@@ -1,0 +1,207 @@
+import { Ionicons } from '@expo/vector-icons';
+import { useState } from 'react';
+import { Alert, Pressable, StyleSheet, View } from 'react-native';
+
+import { Badge, Button, Card, Screen, SectionHeader, Sheet, Text } from '@/src/components';
+import { formatPhone } from '@/src/lib/phone';
+import { TIER_LABEL, TIER_TONE } from '@/src/lib/loyalty';
+import { useAuthStore } from '@/src/store/auth';
+import { colors, radius, spacing } from '@/src/theme';
+
+export default function ProfileTab() {
+  const user = useAuthStore((s) => s.user);
+  const signOut = useAuthStore((s) => s.signOut);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  if (!user) return null;
+
+  const initial = user.name.trim().charAt(0).toUpperCase() || 'Г';
+
+  return (
+    <Screen scroll>
+      <SectionHeader title="Профиль" kicker="Аккаунт" />
+
+      <Card style={styles.identity}>
+        <View style={styles.avatar}>
+          <Text variant="title" tone="onAccent">
+            {initial}
+          </Text>
+        </View>
+
+        <View style={styles.identityText}>
+          <Text variant="subtitle">{user.name}</Text>
+          <Text variant="caption" tone="muted">
+            {formatPhone(user.phone.replace(/^\+7/, ''))}
+          </Text>
+        </View>
+
+        <Badge label={TIER_LABEL[user.tier]} tone={TIER_TONE[user.tier]} />
+      </Card>
+
+      <View style={styles.stats}>
+        <Stat value={String(user.points)} label="Баллов" />
+        <Stat value={user.memberNo} label="Карта" />
+      </View>
+
+      <View style={styles.menu}>
+        <Row
+          icon="ticket-outline"
+          label="Мои заказы"
+          hint="Шаг 7"
+          onPress={() => Alert.alert('Скоро', 'Экран заказов появится на шаге 7')}
+        />
+        <Row
+          icon="people-outline"
+          label="Гостевой список"
+          hint="Шаг 5"
+          onPress={() => Alert.alert('Скоро', 'Гостевой список появится на шаге 5')}
+        />
+        <Row
+          icon="notifications-outline"
+          label="Уведомления"
+          onPress={() => Alert.alert('Скоро', 'Настройки уведомлений появятся позже')}
+        />
+      </View>
+
+      <Button
+        label="Выйти"
+        variant="outline"
+        fullWidth
+        onPress={() => setConfirmOpen(true)}
+        style={styles.signOut}
+      />
+
+      <Text variant="caption" tone="faint" style={styles.version}>
+        AppRave · демо-режим · оплата не настоящая
+      </Text>
+
+      <Sheet visible={confirmOpen} onClose={() => setConfirmOpen(false)} title="Выйти из аккаунта?">
+        <Text variant="body" tone="muted" style={styles.confirmText}>
+          Билеты и брони останутся за вами — просто войдите снова по этому же номеру.
+        </Text>
+        <View style={styles.confirmActions}>
+          <Button
+            label="Выйти"
+            fullWidth
+            size="lg"
+            onPress={() => {
+              setConfirmOpen(false);
+              void signOut();
+            }}
+          />
+          <Button
+            label="Остаться"
+            variant="ghost"
+            fullWidth
+            onPress={() => setConfirmOpen(false)}
+          />
+        </View>
+      </Sheet>
+    </Screen>
+  );
+}
+
+function Stat({ value, label }: { value: string; label: string }) {
+  return (
+    <Card style={styles.stat}>
+      <Text variant="title">{value}</Text>
+      <Text variant="caption" tone="muted">
+        {label}
+      </Text>
+    </Card>
+  );
+}
+
+function Row({
+  icon,
+  label,
+  hint,
+  onPress,
+}: {
+  icon: React.ComponentProps<typeof Ionicons>['name'];
+  label: string;
+  hint?: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+    >
+      <Ionicons name={icon} size={20} color={colors.textMuted} />
+      <Text variant="body" style={styles.rowLabel}>
+        {label}
+      </Text>
+      {hint && (
+        <Text variant="caption" tone="faint">
+          {hint}
+        </Text>
+      )}
+      <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />
+    </Pressable>
+  );
+}
+
+const styles = StyleSheet.create({
+  identity: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.lg,
+  },
+  avatar: {
+    width: 52,
+    height: 52,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  identityText: {
+    flex: 1,
+    gap: 2,
+  },
+  stats: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    marginTop: spacing.md,
+  },
+  stat: {
+    flex: 1,
+    gap: spacing.xs,
+  },
+  menu: {
+    marginTop: spacing.xxl,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.lg,
+  },
+  rowPressed: {
+    backgroundColor: colors.surfaceElevated,
+  },
+  rowLabel: {
+    flex: 1,
+  },
+  signOut: {
+    marginTop: spacing.xxl,
+  },
+  version: {
+    textAlign: 'center',
+    marginTop: spacing.lg,
+  },
+  confirmText: {
+    marginBottom: spacing.lg,
+  },
+  confirmActions: {
+    gap: spacing.sm,
+  },
+});
