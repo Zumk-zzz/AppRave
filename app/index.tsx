@@ -15,7 +15,7 @@ import {
   Text,
 } from '@/src/components';
 import { formatEventDate, formatPrice, pluralWithCount } from '@/src/lib/format';
-import { colors, radius, spacing } from '@/src/theme';
+import { colors, gradients, spacing } from '@/src/theme';
 
 const FILTERS = ['Все', 'Techno', 'Hip-hop', 'House'] as const;
 
@@ -42,7 +42,7 @@ export default function Showcase() {
   return (
     <Screen scroll>
       <LinearGradient
-        colors={['rgba(204,255,0,0.13)', 'rgba(204,255,0,0)']}
+        colors={gradients.accentGlow}
         style={styles.glow}
         pointerEvents="none"
       />
