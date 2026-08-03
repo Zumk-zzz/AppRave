@@ -65,6 +65,7 @@ export default function RootLayout() {
 
         <Stack.Protected guard={isAuthed}>
           <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="event/[id]" options={{ animation: 'slide_from_right' }} />
         </Stack.Protected>
       </Stack>
     </SafeAreaProvider>

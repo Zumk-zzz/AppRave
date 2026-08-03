@@ -20,6 +20,41 @@ export interface User {
   joinedAt: string;
 }
 
+export type Genre = 'techno' | 'house' | 'hiphop' | 'disco';
+
+export interface TicketType {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  /** Сколько осталось. 0 — распродано. */
+  available: number;
+}
+
+export interface ClubEvent {
+  id: string;
+  title: string;
+  /** Строка под названием: резидент, серия вечеринок */
+  subtitle: string;
+  /** ISO — переживает сериализацию без сюрпризов с таймзонами */
+  date: string;
+  genre: Genre;
+  ageLimit: number;
+  lineup: string[];
+  description: string;
+  /**
+   * Пара цветов для обложки. Афиши рисуются градиентом, а не картинками:
+   * не зависят от сети, мгновенно грузятся и всегда попадают в стиль.
+   */
+  cover: readonly [string, string];
+  tickets: TicketType[];
+}
+
+export interface EventsService {
+  list(): Promise<ClubEvent[]>;
+  byId(id: string): Promise<ClubEvent | null>;
+}
+
 export interface AuthService {
   /** Отправить код на номер. Возвращает, куда именно отправлен. */
   requestCode(phone: string): Promise<{ sentTo: string }>;
