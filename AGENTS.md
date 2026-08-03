@@ -22,6 +22,14 @@ Read the exact versioned docs at https://docs.expo.dev/versions/v54.0.0/ before 
 - Алиас путей: `@/*` → корень проекта (`@/src/theme`, `@/src/components`).
 - Оплата на текущем этапе — **мок**. В интерфейсе это должно быть явно обозначено.
 
+## Грабли
+
+- **Новая папка в `src/` → Metro её не увидит.** `tsc` проходит, а бандл падает с
+  `Unable to resolve "@/src/..."`. Лечится перезапуском с `npx expo start --clear`.
+  Проверять сборку нужно запросом бандла, а не только через `tsc`:
+  `http://<lan-ip>:8081/.expo/.virtual-metro-entry.bundle?platform=ios&dev=true&transform.routerRoot=app`
+  (путь `/index.bundle` в expo-router отдаёт 404).
+
 ## Проверка перед коммитом
 
 ```bash
