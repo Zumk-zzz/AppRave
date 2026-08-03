@@ -72,7 +72,7 @@ export default function TablesTab() {
   const isBooked = bookedLine?.lineId === `table:${eventId}:${selected?.id}`;
 
   return (
-    <Screen scroll padded={false}>
+    <Screen scroll padded={false} contentContainerStyle={styles.scrollBody}>
       <View style={styles.header}>
         <Text variant="label" tone="accent">
           Бронирование
@@ -239,5 +239,9 @@ const styles = StyleSheet.create({
   pickHint: {
     textAlign: 'center',
     marginTop: spacing.xl,
+  },
+  // Запас снизу под плавающую панель заказа
+  scrollBody: {
+    paddingBottom: 110,
   },
 });

@@ -44,7 +44,7 @@ export default function AfishaTab() {
   const [featured, ...rest] = visible;
 
   return (
-    <Screen scroll padded={false}>
+    <Screen scroll padded={false} contentContainerStyle={styles.scrollBody}>
       <View style={styles.header}>
         <Text variant="label" tone="accent">
           {greeting()}
@@ -138,5 +138,9 @@ const styles = StyleSheet.create({
   },
   centerText: {
     textAlign: 'center',
+  },
+  // Запас снизу под плавающую панель заказа
+  scrollBody: {
+    paddingBottom: 110,
   },
 });

@@ -1,6 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
+import { StyleSheet, View } from 'react-native';
 
+import { CartBar } from '@/src/features/cart/CartBar';
 import { colors, fonts, fontSize } from '@/src/theme';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
@@ -14,6 +16,16 @@ const TABS: { name: string; title: string; icon: IoniconName; iconActive: Ionico
 ];
 
 export default function TabsLayout() {
+  return (
+    <View style={styles.root}>
+      <TabsNavigator />
+      {/* Панель заказа общая для всех вкладок — иначе мигала бы на переходах */}
+      <CartBar />
+    </View>
+  );
+}
+
+function TabsNavigator() {
   return (
     <Tabs
       screenOptions={{
@@ -47,3 +59,10 @@ export default function TabsLayout() {
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: colors.bg,
+  },
+});

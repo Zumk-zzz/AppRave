@@ -236,11 +236,15 @@ export default function EventScreen() {
       </View>
 
       {cartCount > 0 && (
-        <View style={[styles.cartHint, { bottom: insets.bottom + 92 }]}>
-          <Text variant="caption" tone="faint">
-            В заказе {pluralWithCount(cartCount, 'позиция', 'позиции', 'позиций')} · оформление на шаге 7
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => router.push('/checkout')}
+          style={[styles.cartHint, { bottom: insets.bottom + 92 }]}
+        >
+          <Text variant="caption" tone="accent">
+            В заказе {pluralWithCount(cartCount, 'позиция', 'позиции', 'позиций')} · оформить
           </Text>
-        </View>
+        </Pressable>
       )}
     </View>
   );

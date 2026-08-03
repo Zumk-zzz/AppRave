@@ -77,25 +77,7 @@ export default function BarTab() {
   const event = events?.find((e) => e.id === eventId) ?? null;
 
   return (
-    <Screen
-      scroll
-      padded={false}
-      footer={
-        barCount > 0 ? (
-          <View style={styles.footer}>
-            <View style={styles.flex}>
-              <Text variant="caption" tone="faint">
-                {pluralWithCount(barCount, 'позиция', 'позиции', 'позиций')} в заказе
-              </Text>
-              <Text variant="title">{formatPrice(barTotal)}</Text>
-            </View>
-            <Text variant="caption" tone="muted" style={styles.footerNote}>
-              Оформление{'\n'}на шаге 7
-            </Text>
-          </View>
-        ) : undefined
-      }
-    >
+    <Screen scroll padded={false} contentContainerStyle={styles.scrollBody}>
       <View style={styles.header}>
         <Text variant="label" tone="accent">
           Предзаказ
@@ -126,6 +108,9 @@ export default function BarTab() {
           {event && (
             <Text variant="caption" tone="faint" style={styles.eventNote}>
               Заказ к вечеринке {event.title}
+              {barCount > 0
+                ? ` · ${pluralWithCount(barCount, 'позиция', 'позиции', 'позиций')} на ${formatPrice(barTotal)}`
+                : ''}
             </Text>
           )}
 
@@ -243,12 +228,8 @@ const styles = StyleSheet.create({
   flex: {
     flex: 1,
   },
-  footer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.lg,
-  },
-  footerNote: {
-    textAlign: 'right',
+  // Запас снизу под плавающую панель заказа
+  scrollBody: {
+    paddingBottom: 110,
   },
 });

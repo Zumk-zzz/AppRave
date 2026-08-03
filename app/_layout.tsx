@@ -11,6 +11,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import 'react-native-reanimated';
 
 import { useAuthStore } from '@/src/store/auth';
+import { useOrdersStore } from '@/src/store/orders';
 import { colors } from '@/src/theme';
 
 // Держим сплэш до загрузки шрифтов, иначе на старте мелькает системный шрифт.
@@ -27,10 +28,14 @@ export default function RootLayout() {
 
   const status = useAuthStore((s) => s.status);
   const restore = useAuthStore((s) => s.restore);
+  const loadOrders = useOrdersStore((s) => s.load);
 
   useEffect(() => {
     void restore();
-  }, [restore]);
+    // История заказов читается один раз на старте: экрану билета и списку
+    // заказов иначе пришлось бы грузить её каждому по отдельности и мигать.
+    void loadOrders();
+  }, [restore, loadOrders]);
 
   const fontsReady = fontsLoaded || fontError;
   const authReady = status !== 'loading';
@@ -66,6 +71,9 @@ export default function RootLayout() {
         <Stack.Protected guard={isAuthed}>
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="event/[id]" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="checkout" options={{ animation: 'slide_from_bottom' }} />
+          <Stack.Screen name="orders" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="ticket/[id]" options={{ animation: 'slide_from_bottom' }} />
         </Stack.Protected>
       </Stack>
     </SafeAreaProvider>

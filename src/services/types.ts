@@ -55,6 +55,32 @@ export interface EventsService {
   byId(id: string): Promise<ClubEvent | null>;
 }
 
+export type OrderStatus = 'paid' | 'used' | 'cancelled';
+
+export interface OrderLine {
+  kind: 'ticket' | 'table' | 'bar';
+  title: string;
+  subtitle?: string;
+  price: number;
+  qty: number;
+  guests?: string[];
+}
+
+export interface Order {
+  /** Человекочитаемый номер, он же показывается на фейс-контроле */
+  id: string;
+  createdAt: string;
+  eventId?: string;
+  eventTitle?: string;
+  eventDate?: string;
+  lines: OrderLine[];
+  total: number;
+  pointsEarned: number;
+  status: OrderStatus;
+  /** Содержимое QR-кода — то, что сканируют на входе */
+  qrPayload: string;
+}
+
 export type BarCategory = 'cocktails' | 'shots' | 'champagne' | 'strong' | 'soft';
 
 export interface BarItem {

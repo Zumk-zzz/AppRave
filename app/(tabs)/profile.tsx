@@ -1,16 +1,20 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
 
 import { Badge, Button, Card, Screen, SectionHeader, Sheet, Text } from '@/src/components';
-import { formatPhone } from '@/src/lib/phone';
 import { TIER_LABEL, TIER_TONE } from '@/src/lib/loyalty';
+import { formatPhone } from '@/src/lib/phone';
 import { useAuthStore } from '@/src/store/auth';
+import { useOrdersStore } from '@/src/store/orders';
 import { colors, radius, spacing } from '@/src/theme';
 
 export default function ProfileTab() {
+  const router = useRouter();
   const user = useAuthStore((s) => s.user);
   const signOut = useAuthStore((s) => s.signOut);
+  const orderCount = useOrdersStore((s) => s.orders.length);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   if (!user) return null;
@@ -47,14 +51,8 @@ export default function ProfileTab() {
         <Row
           icon="ticket-outline"
           label="Мои заказы"
-          hint="Шаг 7"
-          onPress={() => Alert.alert('Скоро', 'Экран заказов появится на шаге 7')}
-        />
-        <Row
-          icon="people-outline"
-          label="Гостевой список"
-          hint="Шаг 5"
-          onPress={() => Alert.alert('Скоро', 'Гостевой список появится на шаге 5')}
+          hint={orderCount > 0 ? String(orderCount) : undefined}
+          onPress={() => router.push('/orders')}
         />
         <Row
           icon="notifications-outline"
