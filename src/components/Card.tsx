@@ -1,5 +1,5 @@
 import * as Haptics from 'expo-haptics';
-import { Pressable, StyleSheet, View, type ViewProps, type ViewStyle } from 'react-native';
+import { Pressable, StyleSheet, View, type ViewProps } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { colors, radius, spacing } from '@/src/theme';
@@ -14,7 +14,6 @@ export interface CardProps extends ViewProps {
   /** Убрать внутренние отступы — нужно карточкам с картинкой во всю ширину */
   flush?: boolean;
   onPress?: () => void;
-  style?: ViewStyle;
 }
 
 export function Card({

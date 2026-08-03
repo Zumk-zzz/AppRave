@@ -5,12 +5,14 @@
  * данные. Подключение бэкенда = замена правой части этих присваиваний.
  */
 import { mockAuthService } from './auth.mock';
+import { mockBarService } from './bar.mock';
 import { mockBookingService } from './booking.mock';
 import { mockEventsService } from './events.mock';
 
 export const authService = mockAuthService;
 export const eventsService = mockEventsService;
 export const bookingService = mockBookingService;
+export const barService = mockBarService;
 
 export { DEMO_CODE } from './auth.mock';
 export * from './types';

@@ -55,6 +55,25 @@ export interface EventsService {
   byId(id: string): Promise<ClubEvent | null>;
 }
 
+export type BarCategory = 'cocktails' | 'shots' | 'champagne' | 'strong' | 'soft';
+
+export interface BarItem {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  category: BarCategory;
+  /** Объём или крепость — короткая подпись под названием */
+  volume: string;
+  /** Хит продаж: выносится меткой на карточке */
+  popular?: boolean;
+  available: boolean;
+}
+
+export interface BarService {
+  menu(): Promise<BarItem[]>;
+}
+
 export type TableZone = 'vip' | 'lounge' | 'bar';
 
 export interface ClubTable {

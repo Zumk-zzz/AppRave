@@ -44,8 +44,17 @@ interface CartState {
   clear: () => void;
 }
 
-function makeLineId({ kind, refId, eventId }: AddInput): string {
+/**
+ * Ключ строки корзины. Экспортируется, потому что экранам нужно узнать
+ * количество уже добавленного товара до того, как они его добавят —
+ * иначе счётчики на карточках разъедутся с корзиной.
+ */
+export function buildLineId(kind: CartKind, refId: string, eventId?: string): string {
   return `${kind}:${eventId ?? '-'}:${refId}`;
+}
+
+function makeLineId({ kind, refId, eventId }: AddInput): string {
+  return buildLineId(kind, refId, eventId);
 }
 
 export const useCartStore = create<CartState>((set) => ({

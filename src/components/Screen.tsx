@@ -4,6 +4,7 @@ import {
   StyleSheet,
   View,
   type ScrollViewProps,
+  type StyleProp,
   type ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -21,7 +22,7 @@ export interface ScreenProps {
   /** Закреплённая панель внизу: «Оплатить», «Забронировать» */
   footer?: React.ReactNode;
   contentContainerStyle?: ScrollViewProps['contentContainerStyle'];
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
 }
 
 export function Screen({

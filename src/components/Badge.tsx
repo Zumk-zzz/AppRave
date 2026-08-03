@@ -1,4 +1,4 @@
-import { StyleSheet, View, type ViewStyle } from 'react-native';
+import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { colors, fonts, fontSize, radius, spacing } from '@/src/theme';
 import { Text } from './Text';
@@ -8,7 +8,7 @@ export type BadgeTone = 'accent' | 'neutral' | 'danger' | 'success' | 'gold' | '
 export interface BadgeProps {
   label: string;
   tone?: BadgeTone;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
 }
 
 const toneStyles: Record<BadgeTone, { bg: string; fg: string }> = {
