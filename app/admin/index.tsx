@@ -1,10 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useState } from 'react';
+import { Alert, Pressable, StyleSheet, View } from 'react-native';
 
-import { Badge, Card, Screen, Text } from '@/src/components';
+import { Badge, Button, Card, Screen, Text } from '@/src/components';
 import { AdminHeader } from '@/src/features/admin/AdminHeader';
 import { formatPrice } from '@/src/lib/format';
+import { adminService } from '@/src/services';
 import { useCatalogStore } from '@/src/store/catalog';
 import { useOrdersStore } from '@/src/store/orders';
 import { colors, radius, spacing } from '@/src/theme';
@@ -17,8 +20,30 @@ export default function AdminDashboard() {
   const stock = useCatalogStore((s) => s.stock);
   const orders = useOrdersStore((s) => s.orders);
 
+  const [resetting, setResetting] = useState(false);
+
   const revenue = orders.reduce((sum, o) => sum + o.total, 0);
   const lowStock = stock.filter((s) => s.qty <= s.lowThreshold);
+
+  const handleReset = () => {
+    Alert.alert(
+      'Сбросить каталог?',
+      'Афиша, меню, столы и склад вернутся к демонстрационным данным. Все ваши правки пропадут.',
+      [
+        { text: 'Отмена', style: 'cancel' },
+        {
+          text: 'Сбросить',
+          style: 'destructive',
+          onPress: async () => {
+            setResetting(true);
+            await adminService.resetCatalog();
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            setResetting(false);
+          },
+        },
+      ],
+    );
+  };
 
   return (
     <Screen scroll>
@@ -71,6 +96,22 @@ export default function AdminDashboard() {
           onPress={() => router.push('/admin/orders')}
         />
       </View>
+
+      {/* Без сброса удалённый каталог не восстановить иначе как
+          переустановкой приложения */}
+      <Button
+        label={resetting ? 'Восстановление…' : 'Сбросить к демо-данным'}
+        variant="outline"
+        fullWidth
+        loading={resetting}
+        onPress={handleReset}
+        style={styles.reset}
+      />
+
+      <Text variant="caption" tone="faint" style={styles.resetNote}>
+        Вернёт афишу, меню, столы и склад в исходное состояние.{'\n'}
+        Заказы гостей и баллы не тронет.
+      </Text>
     </Screen>
   );
 }
@@ -165,5 +206,12 @@ const styles = StyleSheet.create({
   },
   flex: {
     flex: 1,
+  },
+  reset: {
+    marginTop: spacing.xxl,
+  },
+  resetNote: {
+    textAlign: 'center',
+    marginTop: spacing.md,
   },
 });
