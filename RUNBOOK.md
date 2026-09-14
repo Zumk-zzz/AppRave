@@ -154,6 +154,23 @@ wsl --shutdown
 трёх тысяч модулей. Если нужно освободить память, но продолжить работу
 с бэкендом, гасите именно его.
 
+Аппетит WSL ограничен четырьмя гигабайтами в `~/.wslconfig` — без этого
+он запрашивал половину всей памяти и Docker переставал запускаться
+на загруженной системе.
+
+**За местом на диске C стоит следить.** Образы и тома Docker лежат там,
+и растут они незаметно. Посмотреть, сколько занято:
+
+```powershell
+docker system df
+```
+
+Убрать неиспользуемые образы, не трогая тома с данными:
+
+```powershell
+docker image prune -a
+```
+
 ---
 
 ## Что проверить, когда что-то не работает
@@ -162,6 +179,56 @@ wsl --shutdown
 
 ```powershell
 foreach ($p in 3000,5433,8081) { $c = Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1; if ($c) { "$p -> PID $($c.OwningProcess) $((Get-Process -Id $c.OwningProcess).Name)" } else { "$p свободен" } }
+```
+
+**Docker Desktop не запускается, ошибка `0x800705aa`** —
+`ERROR_NO_SYSTEM_RESOURCES`. Полный текст выглядит так:
+
+```
+Wsl/Service/RegisterDistro/CreateVm/HCS/0x800705aa
+```
+
+Причина не в Docker, а в памяти. WSL без явного лимита запрашивает под
+виртуальную машину **половину всей оперативной памяти** — на этой машине
+8 ГБ из 16. Если браузер, Steam и Discord уже заняли своё, Hyper-V не может
+зарезервировать нужный объём и отказывается создавать машину.
+
+Лечится ограничением в `%USERPROFILE%\.wslconfig`:
+
+```ini
+[wsl2]
+memory=4GB
+processors=4
+swap=2GB
+```
+
+Затем полный перезапуск:
+
+```powershell
+wsl --shutdown
+```
+
+и заново открыть Docker Desktop. Четырёх гигабайт Postgres хватает
+с запасом, а Hyper-V укладывается в свободную память.
+
+Быстро посмотреть, кто съел память:
+
+```powershell
+Get-Process | Group-Object ProcessName | ForEach-Object { [PSCustomObject]@{ Имя = $_.Name; МБ = [math]::Round((($_.Group | Measure-Object WorkingSet64 -Sum).Sum)/1MB) } } | Sort-Object МБ -Descending | Select-Object -First 8
+```
+
+**Docker пишет, что дистрибутив не зарегистрирован** — после сбоя WSL может
+разрегистрировать `docker-desktop`, и Docker пересоздаёт его из файла диска.
+Это нормально и данные не трогает: образы и тома лежат в отдельном файле
+`%LOCALAPPDATA%\Docker\wsl\disk\docker_data.vhdx`.
+
+⚠️ Не удаляйте этот файл вручную и не выполняйте `wsl --unregister` —
+вместе с ним пропадут все тома, включая базу.
+
+Проверить, что данные на месте, после любого сбоя:
+
+```powershell
+docker exec apprave-db psql -U apprave -d apprave -tAc "SELECT 'события: '||(SELECT count(*) FROM events)||', заказы: '||(SELECT count(*) FROM orders)"
 ```
 
 **API не стартует, ругается на базу** — контейнер не поднят или ещё
