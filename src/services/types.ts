@@ -59,7 +59,14 @@ export interface EventsService {
   byId(id: string): Promise<ClubEvent | null>;
 }
 
+/**
+ * Статус заказа целиком.
+ * `used` выставляется автоматически, когда выданы все строки.
+ */
 export type OrderStatus = 'paid' | 'used' | 'cancelled';
+
+/** Что именно гасится при сканировании. */
+export type RedeemKind = 'ticket' | 'bar';
 
 export interface OrderLine {
   kind: 'ticket' | 'table' | 'bar';
@@ -70,6 +77,17 @@ export interface OrderLine {
   price: number;
   qty: number;
   guests?: string[];
+  /**
+   * Сколько единиц уже выдано или использовано.
+   *
+   * Гасится строка, а не весь заказ: на вход проходят один раз, а напитки
+   * забирают порциями и за несколько подходов к бару. Один общий флаг
+   * «использован» означал бы, что после первого коктейля билет перестаёт
+   * пускать внутрь.
+   */
+  redeemed: number;
+  /** Сколько единиц отменено гостем до выдачи */
+  cancelled?: number;
 }
 
 export interface Order {

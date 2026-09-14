@@ -15,7 +15,7 @@ type Filter = 'all' | 'paid' | 'used' | 'cancelled';
 
 export default function AdminOrders() {
   const orders = useOrdersStore((s) => s.orders);
-  const markUsed = useOrdersStore((s) => s.markUsed);
+  const redeemEntry = useOrdersStore((s) => s.redeemEntry);
 
   const [filter, setFilter] = useState<Filter>('all');
   const [selected, setSelected] = useState<Order | null>(null);
@@ -39,7 +39,7 @@ export default function AdminOrders() {
 
   const handleMarkUsed = (order: Order) => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    markUsed(order.id);
+    redeemEntry(order.id);
     setSelected(null);
   };
 
@@ -143,7 +143,11 @@ export default function AdminOrders() {
                     {line.title}
                   </Text>
                   <Text variant="caption" tone="faint">
-                    × {line.qty}
+                    {line.kind === 'table'
+                      ? '1'
+                      : line.redeemed > 0
+                        ? `${line.redeemed}/${line.qty} выдано`
+                        : `× ${line.qty}`}
                   </Text>
                   <Text variant="body">{formatPrice(line.price * line.qty)}</Text>
                 </View>
@@ -170,9 +174,9 @@ export default function AdminOrders() {
               <Text variant="title">{formatPrice(selected.total)}</Text>
             </View>
 
-            {selected.status === 'paid' ? (
+            {selected.status === 'paid' && selected.lines.some((l) => l.kind === 'ticket') ? (
               <Button
-                label="Отметить как прошедший"
+                label="Отметить проход"
                 size="lg"
                 fullWidth
                 onPress={() => handleMarkUsed(selected)}
@@ -181,7 +185,9 @@ export default function AdminOrders() {
               <Text variant="caption" tone="faint" style={styles.usedNote}>
                 {selected.status === 'cancelled'
                   ? 'Заказ отменён, деньги возвращены'
-                  : 'Билет уже отмечен на входе'}
+                  : selected.lines.some((l) => l.kind === 'ticket')
+                    ? 'Проход уже отмечен'
+                    : 'В заказе нет билетов — только бар или стол'}
               </Text>
             )}
           </View>

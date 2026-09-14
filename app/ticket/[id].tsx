@@ -7,8 +7,9 @@ import QRCode from 'react-native-qrcode-svg';
 import { Badge, Button, Card, Screen, Text } from '@/src/components';
 import { formatEventDate, formatPrice, pluralWithCount } from '@/src/lib/format';
 import { canCancel, CANCEL_BLOCK_TEXT, hoursUntil, REFUND_CUTOFF_HOURS } from '@/src/lib/refund';
-import { adminService, inventoryService } from '@/src/services';
-import { useOrdersStore } from '@/src/store/orders';
+import { isLineCancellable, restoreLine, restoreOrder } from '@/src/lib/order-actions';
+import type { OrderLine } from '@/src/services';
+import { redeemableOf, useOrdersStore } from '@/src/store/orders';
 import { colors, fonts, radius, spacing } from '@/src/theme';
 
 export default function TicketScreen() {
@@ -17,6 +18,7 @@ export default function TicketScreen() {
 
   const order = useOrdersStore((s) => s.orders.find((o) => o.id === id));
   const cancel = useOrdersStore((s) => s.cancel);
+  const cancelLineUnits = useOrdersStore((s) => s.cancelLineUnits);
 
   if (!order) {
     return (
@@ -31,9 +33,33 @@ export default function TicketScreen() {
     );
   }
 
-  const ticketLines = order.lines.filter((l) => l.kind === 'ticket');
-  const tableLines = order.lines.filter((l) => l.kind === 'table');
-  const barLines = order.lines.filter((l) => l.kind === 'bar');
+  // Индекс исходного массива нужен для отмены конкретной строки,
+  // поэтому фильтруем с сохранением позиции, а не просто filter().
+  const indexed = order.lines.map((line, index) => ({ line, index }));
+  const ticketLines = indexed.filter((x) => x.line.kind === 'ticket');
+  const tableLines = indexed.filter((x) => x.line.kind === 'table');
+  const barLines = indexed.filter((x) => x.line.kind === 'bar');
+
+  const handleCancelLine = (line: OrderLine, index: number) => {
+    const left = redeemableOf(line);
+
+    Alert.alert(
+      'Отменить позицию?',
+      `«${line.title}» — ${left} шт. Вернём в продажу, деньги придут на карту в течение трёх дней.`,
+      [
+        { text: 'Оставить', style: 'cancel' },
+        {
+          text: 'Отменить',
+          style: 'destructive',
+          onPress: async () => {
+            await restoreLine(order, line, left);
+            await cancelLineUnits(order.id, index, left);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          },
+        },
+      ],
+    );
+  };
 
   const cancelCheck = canCancel(order);
   const hoursLeft = order.eventDate ? Math.floor(hoursUntil(order.eventDate)) : null;
@@ -48,23 +74,9 @@ export default function TicketScreen() {
           text: 'Отменить заказ',
           style: 'destructive',
           onPress: async () => {
-            // Возвращаем товар туда, откуда он ушёл при оплате, иначе
-            // склад и остаток билетов навсегда разойдутся с реальностью.
-            for (const line of order.lines) {
-              if (line.kind === 'bar' && line.refId) {
-                await inventoryService.apply({
-                  barItemId: line.refId,
-                  kind: 'correction',
-                  delta: line.qty,
-                  comment: `Возврат по заказу ${order.id}`,
-                  orderId: order.id,
-                });
-              }
-              if (line.kind === 'ticket' && line.refId && order.eventId) {
-                await adminService.consumeTickets(order.eventId, line.refId, -line.qty);
-              }
-            }
-
+            // Возвращаем невыданное туда, откуда оно ушло при оплате,
+            // иначе склад и остаток билетов разойдутся с реальностью.
+            await restoreOrder(order);
             await cancel(order.id);
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           },
@@ -130,21 +142,27 @@ export default function TicketScreen() {
       <Card style={styles.details}>
         {ticketLines.length > 0 && (
           <Section title="Билеты">
-            {ticketLines.map((l, i) => (
-              <Row key={i} left={l.title} right={`× ${l.qty}`} />
+            {ticketLines.map(({ line, index }) => (
+              <LineRow
+                key={index}
+                line={line}
+                onCancel={
+                  isLineCancellable(order, line) ? () => handleCancelLine(line, index) : undefined
+                }
+              />
             ))}
           </Section>
         )}
 
         {tableLines.length > 0 && (
           <Section title="Стол">
-            {tableLines.map((l, i) => (
-              <View key={i} style={styles.tableBlock}>
-                <Row left={l.title} right={formatPrice(l.price)} />
-                {l.guests && l.guests.length > 0 && (
+            {tableLines.map(({ line }) => (
+              <View key={line.refId} style={styles.tableBlock}>
+                <Row left={line.title} right={formatPrice(line.price)} />
+                {line.guests && line.guests.length > 0 && (
                   <Text variant="caption" tone="faint" style={styles.guests}>
-                    {pluralWithCount(l.guests.length, 'гость', 'гостя', 'гостей')}:{' '}
-                    {l.guests.join(', ')}
+                    {pluralWithCount(line.guests.length, 'гость', 'гостя', 'гостей')}:{' '}
+                    {line.guests.join(', ')}
                   </Text>
                 )}
               </View>
@@ -153,9 +171,15 @@ export default function TicketScreen() {
         )}
 
         {barLines.length > 0 && (
-          <Section title="Бар — ждёт к приходу">
-            {barLines.map((l, i) => (
-              <Row key={i} left={l.title} right={`× ${l.qty}`} />
+          <Section title="Бар — получить у стойки">
+            {barLines.map(({ line, index }) => (
+              <LineRow
+                key={index}
+                line={line}
+                onCancel={
+                  isLineCancellable(order, line) ? () => handleCancelLine(line, index) : undefined
+                }
+              />
             ))}
           </Section>
         )}
@@ -203,6 +227,60 @@ function Section({ title, children }: { title: string; children: React.ReactNode
         {title}
       </Text>
       {children}
+    </View>
+  );
+}
+
+/**
+ * Строка состава заказа: название, состояние выдачи и отмена невыданного.
+ *
+ * Состояние показывается словами, а не значком: «выдано 2 из 3» гость
+ * понимает сразу, а иконка требует догадки.
+ */
+function LineRow({ line, onCancel }: { line: OrderLine; onCancel?: () => void }) {
+  const left = redeemableOf(line);
+  const cancelledUnits = line.cancelled ?? 0;
+
+  const state =
+    line.redeemed >= line.qty
+      ? line.kind === 'ticket'
+        ? 'Прошли'
+        : 'Выдано'
+      : line.redeemed > 0
+        ? `Выдано ${line.redeemed} из ${line.qty}`
+        : cancelledUnits > 0
+          ? `Отменено ${cancelledUnits} из ${line.qty}`
+          : null;
+
+  return (
+    <View style={styles.lineRow}>
+      <View style={styles.lineMain}>
+        <Text variant="body" tone="muted" style={styles.rowLeft} numberOfLines={1}>
+          {line.title}
+        </Text>
+        <Text variant="body">× {line.qty}</Text>
+      </View>
+
+      {(state || onCancel) && (
+        <View style={styles.lineMeta}>
+          {state && (
+            <Text
+              variant="caption"
+              tone={line.redeemed >= line.qty ? 'success' : cancelledUnits > 0 ? 'danger' : 'accent'}
+              style={styles.rowLeft}
+            >
+              {state}
+            </Text>
+          )}
+          {onCancel && (
+            <Pressable accessibilityRole="button" hitSlop={8} onPress={onCancel}>
+              <Text variant="caption" tone="faint">
+                Отменить{left < line.qty ? ` (${left})` : ''}
+              </Text>
+            </Pressable>
+          )}
+        </View>
+      )}
     </View>
   );
 }
@@ -298,6 +376,20 @@ const styles = StyleSheet.create({
   },
   rowLeft: {
     flex: 1,
+  },
+  lineRow: {
+    gap: 2,
+    paddingVertical: 2,
+  },
+  lineMain: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  lineMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
   },
   totals: {
     gap: spacing.sm,

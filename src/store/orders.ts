@@ -21,7 +21,15 @@ interface OrdersState {
     memberNo: string,
     tier: LoyaltyTier,
   ) => Promise<Order[]>;
-  markUsed: (orderId: string) => void;
+  /**
+   * Выдать единицы конкретной строки заказа.
+   * Возвращает true, если что-то действительно погашено.
+   */
+  redeemLine: (orderId: string, lineIndex: number, count: number) => boolean;
+  /** Отметить проход: гасит все билетные строки разом. */
+  redeemEntry: (orderId: string) => boolean;
+  /** Отменить ещё не выданные единицы строки. */
+  cancelLineUnits: (orderId: string, lineIndex: number, count: number) => Promise<void>;
   /** Отмена заказа гостем: билет перестаёт пускать на вход. */
   cancel: (orderId: string) => Promise<void>;
 }
@@ -33,7 +41,8 @@ export const useOrdersStore = create<OrdersState>((set, get) => ({
   async load() {
     try {
       const raw = await AsyncStorage.getItem(ORDERS_KEY);
-      set({ orders: raw ? (JSON.parse(raw) as Order[]) : [], loaded: true });
+      const parsed = raw ? (JSON.parse(raw) as Order[]) : [];
+      set({ orders: parsed.map(migrateOrder), loaded: true });
     } catch {
       // Повреждённая история не должна мешать покупать дальше.
       set({ orders: [], loaded: true });
@@ -83,10 +92,80 @@ export const useOrdersStore = create<OrdersState>((set, get) => ({
     return created;
   },
 
-  markUsed(orderId) {
-    const next = get().orders.map((o) => (o.id === orderId ? { ...o, status: 'used' as const } : o));
+  redeemLine(orderId, lineIndex, count) {
+    let changed = false;
+
+    const next = get().orders.map((order) => {
+      if (order.id !== orderId) return order;
+
+      const lines = order.lines.map((line, i) => {
+        if (i !== lineIndex) return line;
+
+        const available = redeemableOf(line);
+        const take = Math.min(count, available);
+        if (take <= 0) return line;
+
+        changed = true;
+        return { ...line, redeemed: line.redeemed + take };
+      });
+
+      return withDerivedStatus({ ...order, lines });
+    });
+
+    if (changed) {
+      set({ orders: next });
+      void persist(next);
+    }
+
+    return changed;
+  },
+
+  redeemEntry(orderId) {
+    let changed = false;
+
+    const next = get().orders.map((order) => {
+      if (order.id !== orderId) return order;
+
+      const lines = order.lines.map((line) => {
+        if (line.kind !== 'ticket') return line;
+
+        const available = redeemableOf(line);
+        if (available <= 0) return line;
+
+        changed = true;
+        return { ...line, redeemed: line.redeemed + available };
+      });
+
+      return withDerivedStatus({ ...order, lines });
+    });
+
+    if (changed) {
+      set({ orders: next });
+      void persist(next);
+    }
+
+    return changed;
+  },
+
+  async cancelLineUnits(orderId, lineIndex, count) {
+    const next = get().orders.map((order) => {
+      if (order.id !== orderId) return order;
+
+      const lines = order.lines.map((line, i) => {
+        if (i !== lineIndex) return line;
+
+        const available = redeemableOf(line);
+        const take = Math.min(count, available);
+        if (take <= 0) return line;
+
+        return { ...line, cancelled: (line.cancelled ?? 0) + take };
+      });
+
+      return withDerivedStatus({ ...order, lines });
+    });
+
     set({ orders: next });
-    void persist(next);
+    await persist(next);
   },
 
   async cancel(orderId) {
@@ -104,10 +183,56 @@ export const useOrdersStore = create<OrdersState>((set, get) => ({
   },
 }));
 
+/**
+ * Приводит заказы, записанные до появления построчной выдачи, к текущей модели.
+ *
+ * В старых записях поля redeemed нет вовсе, и без подстановки все расчёты
+ * остатка давали бы NaN. Заказ, помеченный когда-то как used, означает, что
+ * выдали по нему всё, — иначе после обновления он снова стал бы «непогашенным»
+ * и по нему можно было бы пройти второй раз.
+ */
+function migrateOrder(order: Order): Order {
+  const wasUsed = order.status === 'used';
+
+  return {
+    ...order,
+    lines: order.lines.map((line) => ({
+      ...line,
+      redeemed: line.redeemed ?? (wasUsed ? line.qty : 0),
+      cancelled: line.cancelled ?? 0,
+    })),
+  };
+}
+
+/** Сколько единиц строки ещё можно выдать: не выдано и не отменено. */
+export function redeemableOf(line: OrderLine): number {
+  return Math.max(0, line.qty - line.redeemed - (line.cancelled ?? 0));
+}
+
+/** Строка считается закрытой, когда выдавать больше нечего. */
+export function isLineClosed(line: OrderLine): boolean {
+  return redeemableOf(line) === 0;
+}
+
+/**
+ * Статус заказа выводится из строк, а не хранится отдельно.
+ * Отдельное поле неизбежно разъехалось бы с содержимым.
+ */
+function withDerivedStatus(order: Order): Order {
+  if (order.status === 'cancelled') return order;
+
+  // Стол не выдают — он либо есть, либо нет, и на закрытие заказа не влияет
+  const redeemable = order.lines.filter((l) => l.kind !== 'table');
+  const allClosed = redeemable.length > 0 && redeemable.every(isLineClosed);
+
+  return { ...order, status: allClosed ? 'used' : 'paid' };
+}
+
 function toOrderLine(item: CartItem): OrderLine {
   return {
     kind: item.kind,
     refId: item.refId,
+    redeemed: 0,
     title: item.title,
     subtitle: item.subtitle,
     price: item.price,
