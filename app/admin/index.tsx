@@ -101,6 +101,12 @@ export default function AdminDashboard() {
           hint={`${orders.length} за всё время`}
           onPress={() => router.push('/admin/orders')}
         />
+        <Section
+          icon="stats-chart"
+          title="Аналитика"
+          hint="Выручка, средний чек, топ позиций"
+          onPress={() => router.push('/admin/analytics')}
+        />
       </View>
 
       {/* Без сброса удалённый каталог не восстановить иначе как
