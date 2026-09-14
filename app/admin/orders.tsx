@@ -11,7 +11,7 @@ import type { Order } from '@/src/services';
 import { useOrdersStore } from '@/src/store/orders';
 import { colors, spacing } from '@/src/theme';
 
-type Filter = 'all' | 'paid' | 'used';
+type Filter = 'all' | 'paid' | 'used' | 'cancelled';
 
 export default function AdminOrders() {
   const orders = useOrdersStore((s) => s.orders);
@@ -20,11 +20,17 @@ export default function AdminOrders() {
   const [filter, setFilter] = useState<Filter>('all');
   const [selected, setSelected] = useState<Order | null>(null);
 
-  const revenue = orders.reduce((sum, o) => sum + o.total, 0);
-  const guests = orders.reduce(
+  // Отменённые заказы в выручку не идут: деньги вернулись гостю,
+  // и завышенная цифра тут хуже, чем отсутствие цифры вообще.
+  const active = orders.filter((o) => o.status !== 'cancelled');
+  const revenue = active.reduce((sum, o) => sum + o.total, 0);
+  const guests = active.reduce(
     (sum, o) => sum + o.lines.filter((l) => l.kind === 'ticket').reduce((n, l) => n + l.qty, 0),
     0,
   );
+  const refunded = orders
+    .filter((o) => o.status === 'cancelled')
+    .reduce((sum, o) => sum + o.total, 0);
 
   const visible = useMemo(
     () => (filter === 'all' ? orders : orders.filter((o) => o.status === filter)),
@@ -46,12 +52,19 @@ export default function AdminOrders() {
         <Metric value={String(guests)} label="Билетов" />
       </View>
 
+      {refunded > 0 && (
+        <Text variant="caption" tone="faint" style={styles.refunded}>
+          Возвращено гостям: {formatPrice(refunded)}
+        </Text>
+      )}
+
       <View style={styles.filter}>
         <Segmented
           options={[
             { value: 'all', label: 'Все' },
             { value: 'paid', label: 'Оплачены' },
             { value: 'used', label: 'Прошли' },
+            { value: 'cancelled', label: 'Отменены' },
           ]}
           value={filter}
           onChange={setFilter}
@@ -78,8 +91,20 @@ export default function AdminOrders() {
                   </Text>
                 </View>
                 <Badge
-                  label={order.status === 'used' ? 'Прошёл' : 'Оплачен'}
-                  tone={order.status === 'used' ? 'neutral' : 'success'}
+                  label={
+                    order.status === 'cancelled'
+                      ? 'Отменён'
+                      : order.status === 'used'
+                        ? 'Прошёл'
+                        : 'Оплачен'
+                  }
+                  tone={
+                    order.status === 'cancelled'
+                      ? 'danger'
+                      : order.status === 'used'
+                        ? 'neutral'
+                        : 'success'
+                  }
                 />
               </View>
 
@@ -154,7 +179,9 @@ export default function AdminOrders() {
               />
             ) : (
               <Text variant="caption" tone="faint" style={styles.usedNote}>
-                Билет уже отмечен на входе
+                {selected.status === 'cancelled'
+                  ? 'Заказ отменён, деньги возвращены'
+                  : 'Билет уже отмечен на входе'}
               </Text>
             )}
           </View>
@@ -187,6 +214,10 @@ const styles = StyleSheet.create({
   },
   filter: {
     marginBottom: spacing.xl,
+  },
+  refunded: {
+    marginTop: spacing.sm,
+    marginBottom: spacing.sm,
   },
   list: {
     gap: spacing.md,

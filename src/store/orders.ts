@@ -21,6 +21,8 @@ interface OrdersState {
     tier: LoyaltyTier,
   ) => Promise<Order[]>;
   markUsed: (orderId: string) => void;
+  /** Отмена заказа гостем: билет перестаёт пускать на вход. */
+  cancel: (orderId: string) => Promise<void>;
 }
 
 export const useOrdersStore = create<OrdersState>((set, get) => ({
@@ -79,11 +81,22 @@ export const useOrdersStore = create<OrdersState>((set, get) => ({
     set({ orders: next });
     void persist(next);
   },
+
+  async cancel(orderId) {
+    // Заказ не удаляем, а помечаем отменённым: история продаж должна
+    // сойтись, а сканер на входе — знать, почему код не пускает.
+    const next = get().orders.map((o) =>
+      o.id === orderId ? { ...o, status: 'cancelled' as const } : o,
+    );
+    set({ orders: next });
+    await persist(next);
+  },
 }));
 
 function toOrderLine(item: CartItem): OrderLine {
   return {
     kind: item.kind,
+    refId: item.refId,
     title: item.title,
     subtitle: item.subtitle,
     price: item.price,

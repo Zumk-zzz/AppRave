@@ -90,6 +90,12 @@ export default function AdminDashboard() {
           onPress={() => router.push('/admin/tables')}
         />
         <Section
+          icon="qr-code"
+          title="Сканер на входе"
+          hint="Проверка билетов по QR"
+          onPress={() => router.push('/admin/scan')}
+        />
+        <Section
           icon="receipt"
           title="Заказы гостей"
           hint={`${orders.length} за всё время`}

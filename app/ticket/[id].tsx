@@ -1,10 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 
 import { Badge, Button, Card, Screen, Text } from '@/src/components';
 import { formatEventDate, formatPrice, pluralWithCount } from '@/src/lib/format';
+import { canCancel, CANCEL_BLOCK_TEXT, hoursUntil, REFUND_CUTOFF_HOURS } from '@/src/lib/refund';
+import { adminService, inventoryService } from '@/src/services';
 import { useOrdersStore } from '@/src/store/orders';
 import { colors, fonts, radius, spacing } from '@/src/theme';
 
@@ -13,6 +16,7 @@ export default function TicketScreen() {
   const router = useRouter();
 
   const order = useOrdersStore((s) => s.orders.find((o) => o.id === id));
+  const cancel = useOrdersStore((s) => s.cancel);
 
   if (!order) {
     return (
@@ -31,6 +35,44 @@ export default function TicketScreen() {
   const tableLines = order.lines.filter((l) => l.kind === 'table');
   const barLines = order.lines.filter((l) => l.kind === 'bar');
 
+  const cancelCheck = canCancel(order);
+  const hoursLeft = order.eventDate ? Math.floor(hoursUntil(order.eventDate)) : null;
+
+  const handleCancel = () => {
+    Alert.alert(
+      'Отменить заказ?',
+      `Билеты вернутся в продажу, напитки — на склад. Возврат придёт на карту в течение трёх дней.`,
+      [
+        { text: 'Оставить', style: 'cancel' },
+        {
+          text: 'Отменить заказ',
+          style: 'destructive',
+          onPress: async () => {
+            // Возвращаем товар туда, откуда он ушёл при оплате, иначе
+            // склад и остаток билетов навсегда разойдутся с реальностью.
+            for (const line of order.lines) {
+              if (line.kind === 'bar' && line.refId) {
+                await inventoryService.apply({
+                  barItemId: line.refId,
+                  kind: 'correction',
+                  delta: line.qty,
+                  comment: `Возврат по заказу ${order.id}`,
+                  orderId: order.id,
+                });
+              }
+              if (line.kind === 'ticket' && line.refId && order.eventId) {
+                await adminService.consumeTickets(order.eventId, line.refId, -line.qty);
+              }
+            }
+
+            await cancel(order.id);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          },
+        },
+      ],
+    );
+  };
+
   return (
     <Screen scroll>
       <View style={styles.header}>
@@ -44,8 +86,20 @@ export default function TicketScreen() {
           <Ionicons name="close" size={22} color={colors.textMuted} />
         </Pressable>
         <Badge
-          label={order.status === 'used' ? 'Использован' : 'Оплачено'}
-          tone={order.status === 'used' ? 'neutral' : 'success'}
+          label={
+            order.status === 'cancelled'
+              ? 'Отменён'
+              : order.status === 'used'
+                ? 'Использован'
+                : 'Оплачено'
+          }
+          tone={
+            order.status === 'cancelled'
+              ? 'danger'
+              : order.status === 'used'
+                ? 'neutral'
+                : 'success'
+          }
         />
       </View>
 
@@ -111,6 +165,24 @@ export default function TicketScreen() {
           <Row left="Начислено баллов" right={`+${order.pointsEarned}`} accent />
         </View>
       </Card>
+
+      {order.status === 'paid' && (
+        <View style={styles.cancelBlock}>
+          {cancelCheck.allowed ? (
+            <>
+              <Button label="Отменить заказ" variant="outline" fullWidth onPress={handleCancel} />
+              <Text variant="caption" tone="faint" style={styles.cancelNote}>
+                Бесплатно до {REFUND_CUTOFF_HOURS} часов до начала
+                {hoursLeft !== null ? ` · осталось ${hoursLeft} ч` : ''}
+              </Text>
+            </>
+          ) : (
+            <Text variant="caption" tone="faint" style={styles.cancelNote}>
+              {CANCEL_BLOCK_TEXT[cancelCheck.reason ?? 'status']}
+            </Text>
+          )}
+        </View>
+      )}
 
       <Button
         label="Мои заказы"
@@ -234,8 +306,15 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
   },
   action: {
-    marginTop: spacing.xl,
+    marginTop: spacing.sm,
     marginBottom: spacing.sm,
+  },
+  cancelBlock: {
+    marginTop: spacing.xl,
+    gap: spacing.sm,
+  },
+  cancelNote: {
+    textAlign: 'center',
   },
   missing: {
     flex: 1,

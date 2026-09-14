@@ -63,6 +63,8 @@ export type OrderStatus = 'paid' | 'used' | 'cancelled';
 
 export interface OrderLine {
   kind: 'ticket' | 'table' | 'bar';
+  /** Идентификатор товара: нужен, чтобы вернуть его на склад при отмене */
+  refId: string;
   title: string;
   subtitle?: string;
   price: number;
@@ -180,7 +182,10 @@ export interface AdminService {
   saveBarItem(item: BarItem, stock?: Partial<StockItem>): Promise<void>;
   deleteBarItem(id: string): Promise<void>;
   saveTable(table: ClubTable): Promise<void>;
-  /** Уменьшить остаток билетов после продажи */
+  /**
+   * Изменить остаток билетов. Положительное qty — продажа,
+   * отрицательное — возврат при отмене заказа.
+   */
   consumeTickets(eventId: string, ticketTypeId: string, qty: number): Promise<void>;
   /** Вернуть каталог к демонстрационным данным */
   resetCatalog(): Promise<void>;

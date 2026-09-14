@@ -68,8 +68,22 @@ function OrderCard({ order, onPress }: { order: Order; onPress: () => void }) {
           )}
         </View>
         <Badge
-          label={order.status === 'used' ? 'Использован' : isPast ? 'Прошёл' : 'Оплачено'}
-          tone={order.status === 'used' || isPast ? 'neutral' : 'success'}
+          label={
+            order.status === 'cancelled'
+              ? 'Отменён'
+              : order.status === 'used'
+                ? 'Использован'
+                : isPast
+                  ? 'Прошёл'
+                  : 'Оплачено'
+          }
+          tone={
+            order.status === 'cancelled'
+              ? 'danger'
+              : order.status === 'used' || isPast
+                ? 'neutral'
+                : 'success'
+          }
         />
       </View>
 
