@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Text } from '@/src/components';
 import { formatPrice, pluralWithCount } from '@/src/lib/format';
+import { useIsAdmin } from '@/src/store/auth';
 import { selectCount, selectTotal, useCartStore } from '@/src/store/cart';
 import { colors, glow, radius, spacing } from '@/src/theme';
 
@@ -24,8 +25,10 @@ export function CartBar() {
 
   const count = useCartStore(selectCount);
   const total = useCartStore(selectTotal);
+  const isAdmin = useIsAdmin();
 
-  if (count === 0) return null;
+  // Администратор ничего не покупает, панель заказа ему не нужна
+  if (isAdmin || count === 0) return null;
 
   return (
     <Animated.View

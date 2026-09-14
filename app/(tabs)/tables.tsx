@@ -3,18 +3,20 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
-import { Badge, Button, Card, Chip, ChipRow, Screen, Text } from '@/src/components';
+import { Badge, Button, Card, Chip, ChipRow, Screen, Text, ViewOnlyNote } from '@/src/components';
 import { ZONE_LABEL } from '@/src/data/tables';
 import { FloorLegend, FloorMap } from '@/src/features/tables/FloorMap';
 import { GuestListSheet } from '@/src/features/tables/GuestListSheet';
 import { formatEventDate, formatPrice, pluralWithCount } from '@/src/lib/format';
 import { bookingService, eventsService, type ClubEvent, type ClubTable } from '@/src/services';
+import { useIsAdmin } from '@/src/store/auth';
 import { useCartStore } from '@/src/store/cart';
 import { colors, spacing } from '@/src/theme';
 
 export default function TablesTab() {
   const addToCart = useCartStore((s) => s.add);
   const cartItems = useCartStore((s) => s.items);
+  const isAdmin = useIsAdmin();
 
   const [events, setEvents] = useState<ClubEvent[] | null>(null);
   const [eventId, setEventId] = useState<string | null>(null);
@@ -117,7 +119,7 @@ export default function TablesTab() {
                 <FloorMap tables={tables} selectedId={selected?.id ?? null} onSelect={handleSelect} />
                 <FloorLegend />
 
-                {bookedLine && (
+                {!isAdmin && bookedLine && (
                   <Card style={styles.booked}>
                     <View style={styles.bookedRow}>
                       <View style={styles.flex}>
@@ -156,23 +158,29 @@ export default function TablesTab() {
                       Депозит целиком идёт в счёт заказа — это не плата за сам стол.
                     </Text>
 
-                    <Button
-                      label={
-                        guests.length > 0
-                          ? `Гости · ${pluralWithCount(guests.length, 'гость', 'гостя', 'гостей')}`
-                          : 'Добавить гостей'
-                      }
-                      variant="outline"
-                      fullWidth
-                      onPress={() => setGuestsOpen(true)}
-                    />
+                    {isAdmin ? (
+                      <ViewOnlyNote text="Режим администратора: схема доступна для проверки, бронирование — нет." />
+                    ) : (
+                      <>
+                        <Button
+                          label={
+                            guests.length > 0
+                              ? `Гости · ${pluralWithCount(guests.length, 'гость', 'гостя', 'гостей')}`
+                              : 'Добавить гостей'
+                          }
+                          variant="outline"
+                          fullWidth
+                          onPress={() => setGuestsOpen(true)}
+                        />
 
-                    <Button
-                      label={isBooked ? 'Обновить бронь' : 'Забронировать'}
-                      size="lg"
-                      fullWidth
-                      onPress={handleBook}
-                    />
+                        <Button
+                          label={isBooked ? 'Обновить бронь' : 'Забронировать'}
+                          size="lg"
+                          fullWidth
+                          onPress={handleBook}
+                        />
+                      </>
+                    )}
                   </Card>
                 ) : (
                   <Text variant="caption" tone="faint" style={styles.pickHint}>

@@ -6,10 +6,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Badge, Button, Card, Stepper, Text } from '@/src/components';
+import { Badge, Button, Card, Stepper, Text, ViewOnlyNote } from '@/src/components';
 import { GENRE_LABEL, isTicketSoldOut } from '@/src/lib/events';
 import { formatEventDate, formatPrice, pluralWithCount } from '@/src/lib/format';
 import { eventsService, type ClubEvent, type TicketType } from '@/src/services';
+import { useIsAdmin } from '@/src/store/auth';
 import { selectCount, useCartStore } from '@/src/store/cart';
 import { colors, radius, spacing } from '@/src/theme';
 
@@ -22,6 +23,7 @@ export default function EventScreen() {
 
   const addToCart = useCartStore((s) => s.add);
   const cartCount = useCartStore(selectCount);
+  const isAdmin = useIsAdmin();
 
   const [event, setEvent] = useState<ClubEvent | null>(null);
   const [loading, setLoading] = useState(true);
@@ -192,7 +194,7 @@ export default function EventScreen() {
             })}
           </View>
 
-          {selected && (
+          {selected && !isAdmin && (
             <View style={styles.qtyRow}>
               <View>
                 <Text variant="bodyStrong">Количество</Text>
@@ -217,25 +219,32 @@ export default function EventScreen() {
         <Ionicons name="chevron-back" size={22} color={colors.text} />
       </Pressable>
 
-      {/* Панель покупки */}
+      {/* Панель покупки. Администратору вместо неё — пояснение:
+          он видит афишу глазами гостя, но купить не может. */}
       <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.md }]}>
-        <View style={styles.footerInfo}>
-          <Text variant="caption" tone="faint">
-            {selected ? `${selected.name} × ${qty}` : 'Нет доступных билетов'}
-          </Text>
-          <Text variant="title">{formatPrice(total)}</Text>
-        </View>
+        {isAdmin ? (
+          <ViewOnlyNote text="Режим администратора: так карточку видит гость. Покупка недоступна." />
+        ) : (
+          <>
+            <View style={styles.footerInfo}>
+              <Text variant="caption" tone="faint">
+                {selected ? `${selected.name} × ${qty}` : 'Нет доступных билетов'}
+              </Text>
+              <Text variant="title">{formatPrice(total)}</Text>
+            </View>
 
-        <Button
-          label={justAdded ? 'Добавлено' : 'В заказ'}
-          size="lg"
-          disabled={!selected}
-          onPress={handleAdd}
-          style={styles.footerButton}
-        />
+            <Button
+              label={justAdded ? 'Добавлено' : 'В заказ'}
+              size="lg"
+              disabled={!selected}
+              onPress={handleAdd}
+              style={styles.footerButton}
+            />
+          </>
+        )}
       </View>
 
-      {cartCount > 0 && (
+      {!isAdmin && cartCount > 0 && (
         <Pressable
           accessibilityRole="button"
           onPress={() => router.push('/checkout')}

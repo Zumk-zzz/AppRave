@@ -5,6 +5,7 @@ export { Chip, ChipRow, type ChipProps } from './Chip';
 export { Field, NumberField, type FieldProps, type NumberFieldProps } from './Field';
 export { Segmented, type SegmentedOption, type SegmentedProps } from './Segmented';
 export { Toggle, type ToggleProps } from './Toggle';
+export { ViewOnlyNote } from './ViewOnlyNote';
 export { Screen, type ScreenProps } from './Screen';
 export { SectionHeader, type SectionHeaderProps } from './SectionHeader';
 export { Skeleton, SkeletonGroup, type SkeletonProps } from './Skeleton';

@@ -2,10 +2,11 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
-import { Badge, Card, Chip, ChipRow, Screen, Stepper, Text } from '@/src/components';
+import { Badge, Card, Chip, ChipRow, Screen, Stepper, Text, ViewOnlyNote } from '@/src/components';
 import { CATEGORY_LABEL, CATEGORY_ORDER } from '@/src/data/bar';
 import { formatPrice, pluralWithCount } from '@/src/lib/format';
 import { barService, eventsService, type BarCategory, type BarItem, type ClubEvent } from '@/src/services';
+import { useIsAdmin } from '@/src/store/auth';
 import { buildLineId, useCartStore } from '@/src/store/cart';
 import { colors, spacing } from '@/src/theme';
 
@@ -15,6 +16,7 @@ export default function BarTab() {
   const items = useCartStore((s) => s.items);
   const add = useCartStore((s) => s.add);
   const setQty = useCartStore((s) => s.setQty);
+  const isAdmin = useIsAdmin();
 
   const [events, setEvents] = useState<ClubEvent[] | null>(null);
   const [eventId, setEventId] = useState<string | null>(null);
@@ -112,7 +114,7 @@ export default function BarTab() {
           {event && (
             <Text variant="caption" tone="faint" style={styles.eventNote}>
               Заказ к вечеринке {event.title}
-              {barCount > 0
+              {!isAdmin && barCount > 0
                 ? ` · ${pluralWithCount(barCount, 'позиция', 'позиции', 'позиций')} на ${formatPrice(barTotal)}`
                 : ''}
             </Text>
@@ -164,12 +166,12 @@ export default function BarTab() {
                     </View>
                   </View>
 
-                  {item.available ? (
-                    <Stepper value={qty} onChange={(next) => changeQty(item, next)} max={20} />
-                  ) : (
+                  {!item.available ? (
                     <Text variant="caption" tone="danger">
                       Закончилось
                     </Text>
+                  ) : isAdmin ? null : (
+                    <Stepper value={qty} onChange={(next) => changeQty(item, next)} max={20} />
                   )}
                 </Card>
               );

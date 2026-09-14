@@ -83,6 +83,12 @@ export default function RootLayout() {
         <Stack.Protected guard={isAuthed}>
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="event/[id]" options={{ animation: 'slide_from_right' }} />
+        </Stack.Protected>
+
+        {/* Покупки и билеты — только для гостя. Администратор сотрудник,
+            а не клиент, и закрыто это на уровне роутера, а не только
+            спрятанными кнопками. */}
+        <Stack.Protected guard={isAuthed && !isAdmin}>
           <Stack.Screen name="checkout" options={{ animation: 'slide_from_bottom' }} />
           <Stack.Screen name="orders" options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="ticket/[id]" options={{ animation: 'slide_from_bottom' }} />
