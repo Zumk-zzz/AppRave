@@ -9,8 +9,14 @@ Expo SDK 54 (React Native 0.81, React 19.1) · TypeScript · expo-router v6 · R
 
 ## Запуск
 
+Проект состоит из трёх частей: база в Docker, API-сервер и мобильное приложение.
+Полная пошаговая инструкция — **[RUNBOOK.md](RUNBOOK.md)**: как поднять всё
+с нуля, как погасить и что делать, когда не работает.
+
+Коротко, если всё уже настроено:
+
 ```bash
-npm install
+cd server && docker compose up -d && npm run dev
 ```
 
 ```bash
