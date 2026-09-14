@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 
 import { pointsForPurchase } from '@/src/lib/loyalty';
+import { cancelReminder, scheduleReminder } from '@/src/lib/reminders';
 import type { ClubEvent, LoyaltyTier, Order, OrderLine } from '@/src/services';
 import type { CartItem } from './cart';
 
@@ -69,6 +70,12 @@ export const useOrdersStore = create<OrdersState>((set, get) => ({
       });
     }
 
+    // Напоминание ставится после создания заказа, чтобы у него уже был id
+    for (const order of created) {
+      const reminderId = await scheduleReminder(order);
+      if (reminderId) order.reminderId = reminderId;
+    }
+
     const next = [...created, ...get().orders];
     set({ orders: next });
     await persist(next);
@@ -83,6 +90,10 @@ export const useOrdersStore = create<OrdersState>((set, get) => ({
   },
 
   async cancel(orderId) {
+    // Снимаем напоминание: получить «ваша вечеринка через три часа»
+    // по отменённому билету — худший вид уведомления.
+    await cancelReminder(get().orders.find((o) => o.id === orderId)?.reminderId);
+
     // Заказ не удаляем, а помечаем отменённым: история продаж должна
     // сойтись, а сканер на входе — знать, почему код не пускает.
     const next = get().orders.map((o) =>

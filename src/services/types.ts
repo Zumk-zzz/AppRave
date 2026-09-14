@@ -85,6 +85,8 @@ export interface Order {
   status: OrderStatus;
   /** Содержимое QR-кода — то, что сканируют на входе */
   qrPayload: string;
+  /** Идентификатор запланированного напоминания, чтобы снять его при отмене */
+  reminderId?: string;
 }
 
 export type BarCategory = 'cocktails' | 'shots' | 'champagne' | 'strong' | 'soft';

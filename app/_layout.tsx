@@ -10,6 +10,7 @@ import { useEffect } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import 'react-native-reanimated';
 
+import { initNotifications } from '@/src/lib/reminders';
 import { useAuthStore } from '@/src/store/auth';
 import { useCatalogStore } from '@/src/store/catalog';
 import { useOrdersStore } from '@/src/store/orders';
@@ -17,6 +18,9 @@ import { colors } from '@/src/theme';
 
 // Держим сплэш до загрузки шрифтов, иначе на старте мелькает системный шрифт.
 SplashScreen.preventAutoHideAsync();
+
+// Без обработчика уведомление не покажется, пока приложение открыто.
+initNotifications();
 
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({

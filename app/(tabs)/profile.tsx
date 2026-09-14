@@ -1,9 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Badge, Button, Card, Screen, SectionHeader, Sheet, Text } from '@/src/components';
+import { NotificationsRow } from '@/src/features/profile/NotificationsRow';
 import { TIER_LABEL, TIER_TONE } from '@/src/lib/loyalty';
 import { formatPhone } from '@/src/lib/phone';
 import { useAuthStore } from '@/src/store/auth';
@@ -82,11 +83,7 @@ export default function ProfileTab() {
             onPress={() => router.push('/orders')}
           />
         )}
-        <Row
-          icon="notifications-outline"
-          label="Уведомления"
-          onPress={() => Alert.alert('Скоро', 'Настройки уведомлений появятся позже')}
-        />
+        <NotificationsRow />
       </View>
 
       <Button
