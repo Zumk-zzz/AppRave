@@ -1,0 +1,328 @@
+// Схема базы AppRave.
+//
+// Ключевые решения, заложенные прямо в структуре:
+//  - деньги везде в копейках целыми числами, никаких float
+//  - quantity и sold разделены: первое правит админ, второе пишет система,
+//    поэтому редактирование события во время продаж ничего не затирает
+//  - занятость стола гарантирует частичный уникальный индекс, а не код
+//  - у заказа есть срок резерва, после которого товар возвращается в продажу
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  guest
+  admin
+}
+
+enum LoyaltyTier {
+  silver
+  gold
+  black
+}
+
+model User {
+  id        String      @id @default(uuid())
+  phone     String      @unique
+  name      String
+  role      UserRole    @default(guest)
+  tier      LoyaltyTier @default(silver)
+  points    Int         @default(0)
+  memberNo  String      @unique @map("member_no")
+  createdAt DateTime    @default(now()) @map("created_at")
+
+  orders Order[]
+
+  @@map("users")
+}
+
+enum Genre {
+  techno
+  house
+  hiphop
+  disco
+}
+
+enum EventStatus {
+  draft
+  published
+  cancelled
+}
+
+model Event {
+  id          String      @id @default(uuid())
+  title       String
+  subtitle    String      @default("")
+  startsAt    DateTime    @map("starts_at")
+  genre       Genre
+  ageLimit    Int         @default(18) @map("age_limit")
+  lineup      String[]
+  description String      @default("")
+  coverFrom   String      @map("cover_from")
+  coverTo     String      @map("cover_to")
+  // Черновик не виден гостям: событие можно готовить, не показывая
+  // полупустую карточку в афише
+  status      EventStatus @default(draft)
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  ticketTypes TicketType[]
+  orders      Order[]
+  bookings    TableBooking[]
+
+  @@index([status, startsAt])
+  @@map("events")
+}
+
+model TicketType {
+  id          String @id @default(uuid())
+  eventId     String @map("event_id")
+  name        String
+  description String @default("")
+  priceKopecks Int   @map("price_kopecks")
+  // Сколько выпущено — правит администратор
+  quantity    Int
+  // Сколько продано — пишет только система. Доступное = quantity - sold
+  // и нигде не хранится, поэтому рассинхрону взяться неоткуда.
+  sold        Int    @default(0)
+
+  event Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  lines OrderLine[]
+
+  @@index([eventId])
+  @@map("ticket_types")
+}
+
+enum TableZone {
+  vip
+  lounge
+  bar
+}
+
+model ClubTable {
+  id             String    @id @default(uuid())
+  label          String    @unique
+  zone           TableZone
+  seats          Int
+  depositKopecks Int       @map("deposit_kopecks")
+  // Снят с продажи администратором: ремонт или служебная бронь
+  blocked        Boolean   @default(false)
+  x              Float
+  y              Float
+  w              Float
+  h              Float
+
+  bookings TableBooking[]
+
+  @@map("club_tables")
+}
+
+enum BookingStatus {
+  pending
+  paid
+  cancelled
+  expired
+}
+
+model TableBooking {
+  id      String        @id @default(uuid())
+  orderId String        @map("order_id")
+  eventId String        @map("event_id")
+  tableId String        @map("table_id")
+  guests  String[]
+  status  BookingStatus @default(pending)
+
+  order Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  event Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  table ClubTable @relation(fields: [tableId], references: [id], onDelete: Restrict)
+
+  // Двойную бронь запрещает база, а не код приложения.
+  // Частичный индекс объявлен вручную в миграции: Prisma не умеет WHERE
+  // в @@unique. См. migrations/*/partial_unique_booking.sql
+  @@index([eventId, tableId, status])
+  @@map("table_bookings")
+}
+
+enum BarCategory {
+  cocktails
+  shots
+  champagne
+  strong
+  soft
+}
+
+model BarItem {
+  id           String      @id @default(uuid())
+  name         String
+  description  String      @default("")
+  priceKopecks Int         @map("price_kopecks")
+  category     BarCategory
+  volume       String      @default("")
+  popular      Boolean     @default(false)
+  available    Boolean     @default(true)
+
+  stock      Stock?
+  stockMoves StockMove[]
+  lines      OrderLine[]
+
+  @@index([category])
+  @@map("bar_items")
+}
+
+model Stock {
+  barItemId    String @id @map("bar_item_id")
+  qty          Int    @default(0)
+  unit         String @default("шт")
+  lowThreshold Int    @default(5) @map("low_threshold")
+
+  barItem BarItem @relation(fields: [barItemId], references: [id], onDelete: Cascade)
+
+  @@map("stock")
+}
+
+enum StockMoveKind {
+  receipt
+  writeoff
+  sale
+  correction
+  refund
+}
+
+model StockMove {
+  id        String        @id @default(uuid())
+  barItemId String        @map("bar_item_id")
+  kind      StockMoveKind
+  // Со знаком: приход положительный, расход отрицательный
+  delta     Int
+  comment   String?
+  orderId   String?       @map("order_id")
+  createdAt DateTime      @default(now()) @map("created_at")
+
+  barItem BarItem @relation(fields: [barItemId], references: [id], onDelete: Cascade)
+
+  @@index([barItemId, createdAt])
+  @@map("stock_moves")
+}
+
+enum OrderStatus {
+  draft
+  pending
+  paid
+  expired
+  cancelled
+  refunded
+  used
+}
+
+model Order {
+  id           String      @id @default(uuid())
+  // Короткий номер для фейс-контроля: ORD-8F3A
+  number       String      @unique
+  userId       String      @map("user_id")
+  eventId      String?     @map("event_id")
+  status       OrderStatus @default(pending)
+  totalKopecks Int         @map("total_kopecks")
+  pointsEarned Int         @default(0) @map("points_earned")
+  // До этого момента товар держится за гостем. Позже фоновая задача
+  // вернёт его в продажу, а заказ переведёт в expired.
+  expiresAt    DateTime?   @map("expires_at")
+  paidAt       DateTime?   @map("paid_at")
+  usedAt       DateTime?   @map("used_at")
+  createdAt    DateTime    @default(now()) @map("created_at")
+
+  user     User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  event    Event?         @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  lines    OrderLine[]
+  payments Payment[]
+  bookings TableBooking[]
+
+  @@index([userId, createdAt])
+  @@index([status, expiresAt])
+  @@map("orders")
+}
+
+enum LineKind {
+  ticket
+  table
+  bar
+}
+
+model OrderLine {
+  id           String   @id @default(uuid())
+  orderId      String   @map("order_id")
+  kind         LineKind
+  // Ссылки заполняются по типу строки — ровно одна из двух
+  ticketTypeId String?  @map("ticket_type_id")
+  barItemId    String?  @map("bar_item_id")
+  tableId      String?  @map("table_id")
+  // Название на момент покупки: если админ переименует позицию,
+  // старый чек должен остаться прежним
+  title        String
+  subtitle     String?
+  priceKopecks Int      @map("price_kopecks")
+  qty          Int
+
+  order      Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  ticketType TicketType? @relation(fields: [ticketTypeId], references: [id], onDelete: SetNull)
+  barItem    BarItem?    @relation(fields: [barItemId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@map("order_lines")
+}
+
+enum PaymentStatus {
+  created
+  succeeded
+  failed
+  refunded
+}
+
+model Payment {
+  id         String        @id @default(uuid())
+  orderId    String        @map("order_id")
+  provider   String        @default("stub")
+  // Идентификатор на стороне шлюза. Уникален, чтобы повторный вебхук
+  // не создал вторую запись об одном и том же платеже.
+  providerId String        @unique @map("provider_id")
+  status     PaymentStatus @default(created)
+  amountKopecks Int        @map("amount_kopecks")
+  raw        Json?
+  createdAt  DateTime      @default(now()) @map("created_at")
+  updatedAt  DateTime      @updatedAt @map("updated_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@map("payments")
+}
+
+/// Защита от повторной отправки одного и того же запроса: двойной тап
+/// по кнопке оплаты или повтор после обрыва сети вернут исходный заказ.
+model IdempotencyKey {
+  key       String   @id
+  userId    String   @map("user_id")
+  orderId   String   @map("order_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@map("idempotency_keys")
+}
+
+/// Одноразовые коды подтверждения телефона.
+model SmsCode {
+  id        String   @id @default(uuid())
+  phone     String
+  code      String
+  expiresAt DateTime @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([phone, createdAt])
+  @@map("sms_codes")
+}
