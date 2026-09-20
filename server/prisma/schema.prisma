@@ -18,6 +18,9 @@ datasource db {
 
 enum UserRole {
   guest
+  bartender
+  doorman
+  manager
   admin
 }
 
@@ -37,7 +40,9 @@ model User {
   memberNo  String      @unique @map("member_no")
   createdAt DateTime    @default(now()) @map("created_at")
 
-  orders Order[]
+  orders       Order[]
+  staffActions StaffAction[] @relation("StaffActions")
+  shifts       Shift[]
 
   @@map("users")
 }
@@ -267,6 +272,11 @@ model OrderLine {
   subtitle     String?
   priceKopecks Int      @map("price_kopecks")
   qty          Int
+  /// Сколько единиц выдано. Гасится строка, а не заказ: на вход проходят
+  /// один раз, а напитки забирают порциями и за несколько подходов к стойке.
+  redeemed     Int      @default(0)
+  /// Сколько единиц отменено гостем до выдачи
+  cancelledQty Int      @default(0) @map("cancelled_qty")
 
   order      Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
   ticketType TicketType? @relation(fields: [ticketTypeId], references: [id], onDelete: SetNull)
@@ -312,6 +322,70 @@ model IdempotencyKey {
 
   @@index([createdAt])
   @@map("idempotency_keys")
+}
+
+enum StaffActionKind {
+  entry_admitted
+  entry_manual
+  bar_issued
+  shift_opened
+  shift_closed
+  role_granted
+  role_revoked
+  stock_adjusted
+}
+
+/// Журнал действий персонала.
+///
+/// В клубе это не гигиена, а деньги: единственный способ разобраться,
+/// куда делся алкоголь, — знать, кто и что выдал в конкретную минуту.
+model StaffAction {
+  id        String          @id @default(uuid())
+  actorId   String          @map("actor_id")
+  kind      StaffActionKind
+  /// Заказ, которого касалось действие
+  orderId   String?         @map("order_id")
+  /// Произвольные подробности: позиция, количество, кому выдали роль
+  details   Json?
+  shiftId   String?         @map("shift_id")
+  createdAt DateTime        @default(now()) @map("created_at")
+
+  actor User   @relation("StaffActions", fields: [actorId], references: [id], onDelete: Cascade)
+  shift Shift? @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+
+  @@index([actorId, createdAt])
+  @@index([createdAt])
+  @@map("staff_actions")
+}
+
+/// Смена сотрудника: от открытия до закрытия.
+model Shift {
+  id       String    @id @default(uuid())
+  userId   String    @map("user_id")
+  openedAt DateTime  @default(now()) @map("opened_at")
+  closedAt DateTime? @map("closed_at")
+  /// Заметка при закрытии: расхождения, происшествия
+  note     String?
+
+  user    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  actions StaffAction[]
+
+  @@index([userId, openedAt])
+  @@map("shifts")
+}
+
+/// Отказ во входе. Фейсер видит пометку сразу при сканировании.
+model BanEntry {
+  id        String   @id @default(uuid())
+  phone     String   @unique
+  reason    String
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+  /// Снятие отказа вместо удаления: история не должна пропадать
+  liftedAt  DateTime? @map("lifted_at")
+
+  @@index([phone])
+  @@map("ban_entries")
 }
 
 /// Одноразовые коды подтверждения телефона.

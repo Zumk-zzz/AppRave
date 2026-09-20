@@ -2,10 +2,11 @@ import jwt from 'jsonwebtoken';
 
 import { env } from '../env.js';
 import { unauthorized } from '../lib/http-error.js';
+import type { UserRole } from '../lib/permissions.js';
 
 export interface TokenPayload {
   sub: string;
-  role: 'guest' | 'admin';
+  role: UserRole;
 }
 
 export function signToken(payload: TokenPayload): string {

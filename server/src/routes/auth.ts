@@ -53,15 +53,19 @@ export async function authRoutes(app: FastifyInstance) {
     // Гасим код сразу: один код — один вход
     await db.smsCode.update({ where: { id: record.id }, data: { usedAt: new Date() } });
 
-    const isAdmin = phone === env.ADMIN_PHONE;
+    // Роль приходит из записи пользователя, а не выводится из номера:
+    // её выдаёт администратор через раздел «Сотрудники». Номер из
+    // переменной окружения нужен только чтобы создать первого админа,
+    // иначе выдать роли было бы некому.
+    const isSeedAdmin = phone === env.ADMIN_PHONE;
 
     const user = await db.user.upsert({
       where: { phone },
-      update: {},
+      update: isSeedAdmin ? { role: 'admin' } : {},
       create: {
         phone,
-        name: isAdmin ? 'Администратор' : 'Гость',
-        role: isAdmin ? 'admin' : 'guest',
+        name: isSeedAdmin ? 'Администратор' : 'Гость',
+        role: isSeedAdmin ? 'admin' : 'guest',
         memberNo: memberNoFor(phone),
       },
     });
