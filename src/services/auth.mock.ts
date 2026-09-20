@@ -1,4 +1,4 @@
-import { ROLE_LABEL, type UserRole } from '@/src/lib/permissions';
+import { ROLE_LABEL, type StaffRole, type UserRole } from '@/src/lib/permissions';
 import { InvalidCodeError, type AuthService, type User } from './types';
 
 /** Код, который принимает мок. Показан на экране ввода. */
@@ -11,7 +11,7 @@ export const DEMO_CODE = '0000';
  * «Сотрудники». Здесь, пока приложение работает на моках, роль выводится
  * из номера — иначе каждую роль нельзя было бы проверить на устройстве.
  */
-export const STAFF_PHONES: Record<string, UserRole> = {
+export const STAFF_PHONES: Record<string, StaffRole> = {
   '+79000000000': 'admin',
   '+79000000001': 'manager',
   '+79000000002': 'bartender',
@@ -21,8 +21,8 @@ export const STAFF_PHONES: Record<string, UserRole> = {
 /** Вход по этому номеру даёт роль администратора. */
 export const ADMIN_PHONE = '+79000000000';
 
-function roleFor(phone: string): UserRole {
-  return STAFF_PHONES[phone] ?? 'guest';
+function staffRoleFor(phone: string): StaffRole | undefined {
+  return STAFF_PHONES[phone];
 }
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -45,17 +45,16 @@ export const mockAuthService: AuthService = {
       throw new InvalidCodeError();
     }
 
-    const role = roleFor(phone);
-    const isGuest = role === 'guest';
+    const staffRole = staffRoleFor(phone);
 
     const user: User = {
-      id: isGuest ? 'u_demo' : `u_${role}`,
+      id: staffRole ? `u_${staffRole}` : 'u_demo',
       phone,
-      name: isGuest ? 'Гость' : ROLE_LABEL[role],
-      role,
+      name: staffRole ? ROLE_LABEL[staffRole] : 'Гость',
+      staffRole,
       tier: 'silver',
-      // Баллы есть только у гостя: персонал не покупает
-      points: isGuest ? 120 : 0,
+      // Баллы копят все: сотрудник в выходной покупает как обычный гость
+      points: 120,
       memberNo: buildMemberNo(phone),
       joinedAt: new Date().toISOString(),
     };

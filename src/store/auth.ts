@@ -1,16 +1,26 @@
 import * as SecureStore from 'expo-secure-store';
 import { create } from 'zustand';
 
-import { can, isStaff, type Permission, type UserRole } from '@/src/lib/permissions';
+import { can, effectiveRole, type Permission, type UserRole } from '@/src/lib/permissions';
 import { authService, type User } from '@/src/services';
 
 const SESSION_KEY = 'apprave.session';
+const WORK_MODE_KEY = 'apprave.work-mode';
 
 export type AuthStatus = 'loading' | 'guest' | 'authed';
 
 interface AuthState {
   status: AuthStatus;
   user: User | null;
+  /**
+   * Рабочий режим: сотрудник на смене.
+   *
+   * Выключен — человек ведёт себя как обычный гость и может покупать.
+   * Именно это позволяет персоналу приходить в клуб отдыхать, не заводя
+   * второй аккаунт.
+   */
+  atWork: boolean;
+  setAtWork: (next: boolean) => Promise<void>;
   /** Прочитать сессию с устройства. Вызывается один раз при старте. */
   restore: () => Promise<void>;
   signIn: (phone: string, code: string) => Promise<void>;
@@ -22,39 +32,56 @@ interface AuthState {
 export const useAuthStore = create<AuthState>((set, get) => ({
   status: 'loading',
   user: null,
+  atWork: false,
+
+  async setAtWork(next) {
+    set({ atWork: next });
+    try {
+      await SecureStore.setItemAsync(WORK_MODE_KEY, next ? '1' : '0');
+    } catch {
+      // Режим не сохранился — после перезапуска сотрудник включит заново
+    }
+  },
 
   async restore() {
     try {
       const raw = await SecureStore.getItemAsync(SESSION_KEY);
       if (raw) {
-        const saved = JSON.parse(raw) as User;
-        // Сессии, записанные до появления ролей, поля role не содержат.
-        // Без подстановки такой пользователь оказался бы с undefined
-        // вместо роли, и проверки доступа вели бы себя непредсказуемо.
-        set({ user: { ...saved, role: saved.role ?? 'guest' }, status: 'authed' });
+        const saved = migrateUser(JSON.parse(raw) as User & { role?: string });
+        const mode = await SecureStore.getItemAsync(WORK_MODE_KEY).catch(() => null);
+
+        set({
+          user: saved,
+          // Режим имеет смысл только у сотрудника: у гостя он всегда выключен
+          atWork: !!saved.staffRole && mode === '1',
+          status: 'authed',
+        });
         return;
       }
     } catch {
       // Повреждённая или недоступная сессия не должна блокировать вход —
       // просто показываем экран авторизации.
     }
-    set({ user: null, status: 'guest' });
+    set({ user: null, atWork: false, status: 'guest' });
   },
 
   async signIn(phone, code) {
     // Ошибку намеренно не гасим: экран показывает её пользователю.
     const user = await authService.verifyCode(phone, code);
     await persist(user);
-    set({ user, status: 'authed' });
+    // Вход всегда начинается в гостевом режиме: сотрудник включает
+    // рабочий сам, когда выходит на смену.
+    set({ user, atWork: false, status: 'authed' });
   },
 
   async signOut() {
     try {
       await SecureStore.deleteItemAsync(SESSION_KEY);
+      await SecureStore.deleteItemAsync(WORK_MODE_KEY);
     } catch {
       // Даже если стереть не удалось, из состояния пользователя убираем.
     }
-    set({ user: null, status: 'guest' });
+    set({ user: null, atWork: false, status: 'guest' });
   },
 
   patchUser(patch) {
@@ -67,6 +94,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 }));
 
+/**
+ * Сессии, записанные до разделения должности и действующей роли,
+ * хранят одно поле role. Переносим его в staffRole, иначе сотрудник
+ * после обновления окажется обычным гостем и потеряет доступ.
+ */
+function migrateUser(saved: User & { role?: string }): User {
+  if (saved.staffRole || !saved.role || saved.role === 'guest') {
+    const { role: _legacy, ...rest } = saved;
+    return rest as User;
+  }
+
+  const { role, ...rest } = saved;
+  return { ...rest, staffRole: role as User['staffRole'] };
+}
+
 async function persist(user: User) {
   try {
     await SecureStore.setItemAsync(SESSION_KEY, JSON.stringify(user));
@@ -76,9 +118,21 @@ async function persist(user: User) {
   }
 }
 
-/** Роль текущего пользователя. Без сессии — гость. */
+/**
+ * Роль, в которой человек действует прямо сейчас.
+ * Должность учитывается только в рабочем режиме.
+ */
 export function useRole(): UserRole {
-  return useAuthStore((s) => s.user?.role ?? 'guest');
+  return useAuthStore((s) => effectiveRole(s.user?.staffRole, s.atWork));
+}
+
+/** Есть ли у человека должность — независимо от того, на смене он или нет. */
+export function useStaffRole() {
+  return useAuthStore((s) => s.user?.staffRole);
+}
+
+export function useAtWork(): boolean {
+  return useAuthStore((s) => s.atWork);
 }
 
 /**
@@ -92,10 +146,5 @@ export function useRole(): UserRole {
  * запроса.
  */
 export function useCan(permission: Permission): boolean {
-  return useAuthStore((s) => can(s.user?.role ?? 'guest', permission));
-}
-
-/** Сотрудник — любой, кто не просто гость. */
-export function useIsStaff(): boolean {
-  return useAuthStore((s) => isStaff(s.user?.role ?? 'guest'));
+  return useAuthStore((s) => can(effectiveRole(s.user?.staffRole, s.atWork), permission));
 }

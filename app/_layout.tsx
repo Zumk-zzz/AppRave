@@ -10,7 +10,7 @@ import { useEffect } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import 'react-native-reanimated';
 
-import { can } from '@/src/lib/permissions';
+import { can, effectiveRole } from '@/src/lib/permissions';
 import { initNotifications } from '@/src/lib/reminders';
 import { useAuthStore } from '@/src/store/auth';
 import { useCatalogStore } from '@/src/store/catalog';
@@ -36,6 +36,7 @@ export default function RootLayout() {
   const status = useAuthStore((s) => s.status);
   const restore = useAuthStore((s) => s.restore);
   const user = useAuthStore((s) => s.user);
+  const atWork = useAuthStore((s) => s.atWork);
   const loadOrders = useOrdersStore((s) => s.load);
   const loadCatalog = useCatalogStore((s) => s.load);
   const loadStaff = useStaffStore((s) => s.load);
@@ -68,14 +69,16 @@ export default function RootLayout() {
   }
 
   const isAuthed = status === 'authed';
-  const role = user?.role ?? 'guest';
+  const role = effectiveRole(user?.staffRole, atWork);
 
   // Маршруты закрываются по правам, а не по названию роли: менеджер
   // и админ попадают в управление одинаково, но раздел сотрудников
   // открыт только тому, у кого есть staff:manage.
   const canManage = isAuthed && can(role, 'catalog:write');
   const canBuy = isAuthed && can(role, 'purchase');
-  const isStaffMember = isAuthed && !canBuy;
+  // Смена доступна любому, у кого есть должность, даже вне рабочего режима:
+  // иначе её нечем было бы открыть.
+  const hasPosition = isAuthed && !!user?.staffRole;
 
   return (
     <SafeAreaProvider>
@@ -106,7 +109,7 @@ export default function RootLayout() {
         </Stack.Protected>
 
         {/* Смена и журнал — для любого сотрудника, независимо от роли */}
-        <Stack.Protected guard={isStaffMember}>
+        <Stack.Protected guard={hasPosition}>
           <Stack.Screen name="shift" options={{ animation: 'slide_from_right' }} />
         </Stack.Protected>
 

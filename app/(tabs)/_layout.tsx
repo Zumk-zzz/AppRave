@@ -4,7 +4,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { CartBar } from '@/src/features/cart/CartBar';
 import { canAny, type Permission } from '@/src/lib/permissions';
-import { useAuthStore } from '@/src/store/auth';
+import { useRole } from '@/src/store/auth';
 import { colors, fonts, fontSize } from '@/src/theme';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
@@ -63,7 +63,7 @@ export default function TabsLayout() {
 }
 
 function TabsNavigator() {
-  const role = useAuthStore((s) => s.user?.role ?? 'guest');
+  const role = useRole();
 
   return (
     <Tabs

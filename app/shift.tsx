@@ -8,7 +8,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Badge, Button, Card, Field, Screen, SectionHeader, Sheet, Text } from '@/src/components';
 import { ROLE_LABEL } from '@/src/lib/permissions';
-import { useAuthStore, useCan } from '@/src/store/auth';
+import { useAuthStore, useCan, useRole } from '@/src/store/auth';
 import { ACTION_LABEL, useStaffStore, type StaffAction } from '@/src/store/staff';
 import { colors, radius, spacing } from '@/src/theme';
 
@@ -16,6 +16,7 @@ export default function ShiftScreen() {
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
   const seesEveryone = useCan('orders:read');
+  const role = useRole();
 
   const shifts = useStaffStore((s) => s.shifts);
   const actions = useStaffStore((s) => s.actions);
@@ -54,7 +55,7 @@ export default function ShiftScreen() {
       kind: 'shift_opened',
       actorId: user.id,
       actorName: user.name,
-      actorRole: user.role,
+      actorRole: role,
     });
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
@@ -64,7 +65,7 @@ export default function ShiftScreen() {
       kind: 'shift_closed',
       actorId: user.id,
       actorName: user.name,
-      actorRole: user.role,
+      actorRole: role,
       summary: note.trim() || undefined,
     });
     await closeShift(user.id, note.trim() || undefined);
@@ -88,7 +89,7 @@ export default function ShiftScreen() {
         <View style={styles.flex}>
           <Text variant="title">Смена</Text>
           <Text variant="caption" tone="muted">
-            {user.name} · {ROLE_LABEL[user.role]}
+            {user.name} · {ROLE_LABEL[role]}
           </Text>
         </View>
       </View>

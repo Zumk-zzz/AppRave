@@ -3,12 +3,12 @@ import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { Badge, Button, Card, Screen, SectionHeader, Sheet, Text } from '@/src/components';
+import { Badge, Button, Card, Screen, SectionHeader, Sheet, Text, Toggle } from '@/src/components';
 import { NotificationsRow } from '@/src/features/profile/NotificationsRow';
 import { TIER_LABEL, TIER_TONE } from '@/src/lib/loyalty';
 import { ROLE_DESCRIPTION, ROLE_LABEL } from '@/src/lib/permissions';
 import { formatPhone } from '@/src/lib/phone';
-import { useAuthStore, useCan } from '@/src/store/auth';
+import { useAuthStore, useCan, useStaffRole } from '@/src/store/auth';
 import { useOrdersStore } from '@/src/store/orders';
 import { colors, radius, spacing } from '@/src/theme';
 
@@ -20,11 +20,14 @@ export default function ProfileTab() {
   const canBuy = useCan('purchase');
   const canManageCatalog = useCan('catalog:write');
   const canManageStaff = useCan('staff:manage');
+  const staffRole = useStaffRole();
+  const atWork = useAuthStore((s) => s.atWork);
+  const setAtWork = useAuthStore((s) => s.setAtWork);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   if (!user) return null;
 
-  const isStaffMember = !canBuy;
+  const contact = user.phone ? formatPhone(user.phone.replace(/^\+7/, '')) : (user.email ?? '');
   const initial = user.name.trim().charAt(0).toUpperCase() || 'Г';
 
   return (
@@ -41,12 +44,12 @@ export default function ProfileTab() {
         <View style={styles.identityText}>
           <Text variant="subtitle">{user.name}</Text>
           <Text variant="caption" tone="muted">
-            {formatPhone(user.phone.replace(/^\+7/, ''))}
+            {contact}
           </Text>
         </View>
 
-        {isStaffMember ? (
-          <Badge label={ROLE_LABEL[user.role]} tone="accent" />
+        {atWork && staffRole ? (
+          <Badge label={ROLE_LABEL[staffRole]} tone="accent" />
         ) : (
           <Badge label={TIER_LABEL[user.tier]} tone={TIER_TONE[user.tier]} />
         )}
@@ -61,14 +64,20 @@ export default function ProfileTab() {
         </View>
       )}
 
-      {/* Что сотрудник может делать в своей роли — понятно сразу,
-          без похода по вкладкам */}
-      {isStaffMember && (
+      {/* Переключатель разделяет «я на смене» и «я пришёл отдыхать».
+          Без него сотрудник не смог бы ничего купить в свой выходной. */}
+      {staffRole && (
         <Card style={styles.roleCard}>
-          <Text variant="caption" tone="faint">
-            Ваша роль
-          </Text>
-          <Text variant="body">{ROLE_DESCRIPTION[user.role]}</Text>
+          <Toggle
+            label="Рабочий режим"
+            hint={
+              atWork
+                ? ROLE_DESCRIPTION[staffRole]
+                : `Выключен — вы обычный гость. Включите, когда выйдете на смену как ${ROLE_LABEL[staffRole].toLowerCase()}.`
+            }
+            value={atWork}
+            onChange={(next) => void setAtWork(next)}
+          />
         </Card>
       )}
 
@@ -89,7 +98,7 @@ export default function ProfileTab() {
         </Card>
       )}
 
-      {isStaffMember && (
+      {staffRole && (
         <Card style={styles.adminCard} onPress={() => router.push('/shift')}>
           <View style={styles.adminIcon}>
             <Ionicons name="time" size={20} color={colors.onAccent} />

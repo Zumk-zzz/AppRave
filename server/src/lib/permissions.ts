@@ -11,7 +11,18 @@
  * защищает только от случайного нажатия, но не от подделанного запроса.
  */
 
-export type UserRole = 'guest' | 'bartender' | 'doorman' | 'manager' | 'admin';
+/** Должность сотрудника. Закреплена за человеком и меняется редко. */
+export type StaffRole = 'bartender' | 'doorman' | 'manager' | 'admin';
+
+/**
+ * Роль, в которой человек действует прямо сейчас.
+ *
+ * Это не то же самое, что должность. Бармен в свой выходной приходит
+ * отдыхать и должен покупать наравне со всеми — поэтому должность
+ * хранится отдельно, а действующая роль зависит ещё и от того,
+ * на смене человек или нет.
+ */
+export type UserRole = 'guest' | StaffRole;
 
 export type Permission =
   /** Пропускать гостей по билетам */
@@ -69,8 +80,19 @@ export const ROLE_DESCRIPTION: Record<UserRole, string> = {
   admin: 'Полный доступ, включая роли сотрудников',
 };
 
-/** Роли, которые можно выдать сотруднику. Гость назначается сам при входе. */
-export const ASSIGNABLE_ROLES: UserRole[] = ['bartender', 'doorman', 'manager', 'admin'];
+/** Должности, которые можно назначить. Гость — не должность, а её отсутствие. */
+export const ASSIGNABLE_ROLES: StaffRole[] = ['bartender', 'doorman', 'manager', 'admin'];
+
+/**
+ * Действующая роль: должность имеет силу только в рабочем режиме.
+ *
+ * Отдыхающий сотрудник — обычный гость: покупает билеты, копит баллы,
+ * не видит сканер. Это и решает задачу «те, кто работал, тоже могут
+ * отдыхать», не заводя людям второй аккаунт.
+ */
+export function effectiveRole(staffRole: StaffRole | null | undefined, atWork: boolean): UserRole {
+  return atWork && staffRole ? staffRole : 'guest';
+}
 
 export function can(role: UserRole, permission: Permission): boolean {
   return ROLE_PERMISSIONS[role]?.includes(permission) ?? false;

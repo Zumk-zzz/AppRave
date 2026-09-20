@@ -6,17 +6,26 @@
  * пережила сериализацию в secure-store и в сетевой ответ без сюрпризов.
  */
 
-import type { UserRole } from '@/src/lib/permissions';
+import type { StaffRole, UserRole } from '@/src/lib/permissions';
 
-export type { UserRole };
+export type { StaffRole, UserRole };
 
 export type LoyaltyTier = 'silver' | 'gold' | 'black';
 
 export interface User {
   id: string;
-  phone: string;
+  /** Телефон или почта — хотя бы одно. Оба служат для входа. */
+  phone?: string;
+  email?: string;
   name: string;
-  role: UserRole;
+  /**
+   * Должность. Отсутствует у обычного гостя.
+   *
+   * Отдельно от действующей роли: сотрудник в выходной приходит отдыхать
+   * и покупает наравне со всеми. Что он может прямо сейчас, решает
+   * рабочий режим, а не эта строка.
+   */
+  staffRole?: StaffRole;
   tier: LoyaltyTier;
   /** Накопленные баллы лояльности */
   points: number;

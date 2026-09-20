@@ -13,12 +13,13 @@ import {
   type UserRole,
 } from '@/src/lib/permissions';
 import { STAFF_PHONES } from '@/src/services';
-import { useAuthStore } from '@/src/store/auth';
+import { useAuthStore, useRole } from '@/src/store/auth';
 import { useStaffStore } from '@/src/store/staff';
 import { colors, spacing } from '@/src/theme';
 
 export default function AdminStaff() {
   const me = useAuthStore((s) => s.user);
+  const myRole = useRole();
   const members = useStaffStore((s) => s.members);
   const addMember = useStaffStore((s) => s.addMember);
   const removeMember = useStaffStore((s) => s.removeMember);
@@ -43,7 +44,7 @@ export default function AdminStaff() {
       kind: 'role_granted',
       actorId: me.id,
       actorName: me.name,
-      actorRole: me.role,
+      actorRole: myRole,
       summary: `${ROLE_LABEL[role]} · ${formatPhone(digits)}`,
     });
 
@@ -68,7 +69,7 @@ export default function AdminStaff() {
               kind: 'role_revoked',
               actorId: me.id,
               actorName: me.name,
-              actorRole: me.role,
+              actorRole: myRole,
               summary: `${ROLE_LABEL[memberRole]} · ${memberName}`,
             });
           }
