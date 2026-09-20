@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 
 import { pointsForPurchase } from '@/src/lib/loyalty';
+import { isLineClosed, redeemableOf, withDerivedStatus } from '@/src/lib/order-status';
 import { cancelReminder, scheduleReminder } from '@/src/lib/reminders';
 import type { ClubEvent, LoyaltyTier, Order, OrderLine } from '@/src/services';
 import type { CartItem } from './cart';
@@ -204,30 +205,6 @@ function migrateOrder(order: Order): Order {
   };
 }
 
-/** Сколько единиц строки ещё можно выдать: не выдано и не отменено. */
-export function redeemableOf(line: OrderLine): number {
-  return Math.max(0, line.qty - line.redeemed - (line.cancelled ?? 0));
-}
-
-/** Строка считается закрытой, когда выдавать больше нечего. */
-export function isLineClosed(line: OrderLine): boolean {
-  return redeemableOf(line) === 0;
-}
-
-/**
- * Статус заказа выводится из строк, а не хранится отдельно.
- * Отдельное поле неизбежно разъехалось бы с содержимым.
- */
-function withDerivedStatus(order: Order): Order {
-  if (order.status === 'cancelled') return order;
-
-  // Стол не выдают — он либо есть, либо нет, и на закрытие заказа не влияет
-  const redeemable = order.lines.filter((l) => l.kind !== 'table');
-  const allClosed = redeemable.length > 0 && redeemable.every(isLineClosed);
-
-  return { ...order, status: allClosed ? 'used' : 'paid' };
-}
-
 function toOrderLine(item: CartItem): OrderLine {
   return {
     kind: item.kind,
@@ -262,3 +239,7 @@ async function persist(orders: Order[]) {
 export function selectOrderById(state: OrdersState, id: string): Order | undefined {
   return state.orders.find((o) => o.id === id);
 }
+
+// Реэкспорт: экраны берут эти помощники отсюда исторически,
+// а живут они в чистом модуле, который можно прогнать тестом.
+export { isLineClosed, redeemableOf };
