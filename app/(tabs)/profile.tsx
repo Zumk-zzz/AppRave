@@ -6,6 +6,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { Badge, Button, Card, Screen, SectionHeader, Sheet, Text, Toggle } from '@/src/components';
 import { ContactsCard } from '@/src/features/profile/ContactsCard';
 import { NotificationsRow } from '@/src/features/profile/NotificationsRow';
+import { SourceCard } from '@/src/features/profile/SourceCard';
 import { TIER_LABEL, TIER_TONE } from '@/src/lib/loyalty';
 import { ROLE_DESCRIPTION, ROLE_LABEL } from '@/src/lib/permissions';
 import { formatContact } from '@/src/lib/contact';
@@ -135,6 +136,8 @@ export default function ProfileTab() {
         onPress={() => setConfirmOpen(true)}
         style={styles.signOut}
       />
+
+      <SourceCard />
 
       <Text variant="caption" tone="faint" style={styles.version}>
         AppRave · демо-режим · оплата не настоящая

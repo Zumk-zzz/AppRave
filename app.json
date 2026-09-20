@@ -46,6 +46,10 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "_comment": "dataSource: mock — приложение работает автономно; api — данные с сервера. Смена требует перезапуска.",
+      "dataSource": "api"
     }
   }
 }
