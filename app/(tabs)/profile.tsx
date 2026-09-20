@@ -6,8 +6,9 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { Badge, Button, Card, Screen, SectionHeader, Sheet, Text } from '@/src/components';
 import { NotificationsRow } from '@/src/features/profile/NotificationsRow';
 import { TIER_LABEL, TIER_TONE } from '@/src/lib/loyalty';
+import { ROLE_DESCRIPTION, ROLE_LABEL } from '@/src/lib/permissions';
 import { formatPhone } from '@/src/lib/phone';
-import { useAuthStore } from '@/src/store/auth';
+import { useAuthStore, useCan } from '@/src/store/auth';
 import { useOrdersStore } from '@/src/store/orders';
 import { colors, radius, spacing } from '@/src/theme';
 
@@ -16,11 +17,14 @@ export default function ProfileTab() {
   const user = useAuthStore((s) => s.user);
   const signOut = useAuthStore((s) => s.signOut);
   const orderCount = useOrdersStore((s) => s.orders.length);
+  const canBuy = useCan('purchase');
+  const canManageCatalog = useCan('catalog:write');
+  const canManageStaff = useCan('staff:manage');
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   if (!user) return null;
 
-  const isAdmin = user.role === 'admin';
+  const isStaffMember = !canBuy;
   const initial = user.name.trim().charAt(0).toUpperCase() || 'Г';
 
   return (
@@ -41,33 +45,59 @@ export default function ProfileTab() {
           </Text>
         </View>
 
-        {isAdmin ? (
-          <Badge label="Админ" tone="accent" />
+        {isStaffMember ? (
+          <Badge label={ROLE_LABEL[user.role]} tone="accent" />
         ) : (
           <Badge label={TIER_LABEL[user.tier]} tone={TIER_TONE[user.tier]} />
         )}
       </Card>
 
-      {/* Уровень, баллы и номер карты показывают нули у администратора:
-          он не покупает. Лишние пустые метрики только сбивают с толку. */}
-      {!isAdmin && (
+      {/* Уровень, баллы и номер карты показывают нули у персонала:
+          оно не покупает. Лишние пустые метрики только сбивают с толку. */}
+      {canBuy && (
         <View style={styles.stats}>
           <Stat value={String(user.points)} label="Баллов" />
           <Stat value={user.memberNo} label="Карта" />
         </View>
       )}
 
-      {/* Раздел существует только для админа: у гостя нет ни пункта меню,
-          ни самого маршрута — он закрыт guard'ом в корневом layout */}
-      {isAdmin && (
+      {/* Что сотрудник может делать в своей роли — понятно сразу,
+          без похода по вкладкам */}
+      {isStaffMember && (
+        <Card style={styles.roleCard}>
+          <Text variant="caption" tone="faint">
+            Ваша роль
+          </Text>
+          <Text variant="body">{ROLE_DESCRIPTION[user.role]}</Text>
+        </Card>
+      )}
+
+      {/* Раздел управления виден по праву, а не по роли: и менеджер,
+          и админ правят каталог, но роли ролями раздаёт только админ */}
+      {canManageCatalog && (
         <Card style={styles.adminCard} onPress={() => router.push('/admin')}>
           <View style={styles.adminIcon}>
             <Ionicons name="construct" size={20} color={colors.onAccent} />
           </View>
           <View style={styles.flex}>
-            <Text variant="bodyStrong">Администрирование</Text>
+            <Text variant="bodyStrong">Управление</Text>
             <Text variant="caption" tone="muted">
-              Афиша, меню, склад, заказы
+              Афиша, меню, склад, заказы{canManageStaff ? ', сотрудники' : ''}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />
+        </Card>
+      )}
+
+      {isStaffMember && (
+        <Card style={styles.adminCard} onPress={() => router.push('/shift')}>
+          <View style={styles.adminIcon}>
+            <Ionicons name="time" size={20} color={colors.onAccent} />
+          </View>
+          <View style={styles.flex}>
+            <Text variant="bodyStrong">Смена и журнал</Text>
+            <Text variant="caption" tone="muted">
+              Открыть смену, посмотреть свои действия
             </Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />
@@ -75,7 +105,7 @@ export default function ProfileTab() {
       )}
 
       <View style={styles.menu}>
-        {!isAdmin && (
+        {canBuy && (
           <Row
             icon="ticket-outline"
             label="Мои заказы"
@@ -191,6 +221,10 @@ const styles = StyleSheet.create({
   },
   stat: {
     flex: 1,
+    gap: spacing.xs,
+  },
+  roleCard: {
+    marginTop: spacing.xl,
     gap: spacing.xs,
   },
   adminCard: {

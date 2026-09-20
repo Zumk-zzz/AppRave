@@ -18,5 +18,5 @@ export const barService = mockBarService;
 export const inventoryService = mockInventoryService;
 export const adminService = mockAdminService;
 
-export { ADMIN_PHONE, DEMO_CODE } from './auth.mock';
+export { ADMIN_PHONE, DEMO_CODE, STAFF_PHONES } from './auth.mock';
 export * from './types';

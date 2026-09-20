@@ -1,6 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
 import { create } from 'zustand';
 
+import { can, isStaff, type Permission, type UserRole } from '@/src/lib/permissions';
 import { authService, type User } from '@/src/services';
 
 const SESSION_KEY = 'apprave.session';
@@ -75,11 +76,26 @@ async function persist(user: User) {
   }
 }
 
+/** Роль текущего пользователя. Без сессии — гость. */
+export function useRole(): UserRole {
+  return useAuthStore((s) => s.user?.role ?? 'guest');
+}
+
 /**
- * Администратор — сотрудник, а не гость: покупать он не может.
- * Отдельный хук, потому что проверка нужна на половине экранов,
- * и повторять селектор в каждом — верный способ где-то забыть.
+ * Проверка права у текущего пользователя.
+ *
+ * Экраны спрашивают «можно ли мне это», а не «кто я». Когда набор прав
+ * у роли изменится, ни один экран трогать не придётся.
+ *
+ * Клиент этим лишь прячет кнопки. Настоящий запрет живёт на сервере:
+ * спрятанная кнопка защищает от случайного нажатия, но не от подделанного
+ * запроса.
  */
-export function useIsAdmin(): boolean {
-  return useAuthStore((s) => s.user?.role === 'admin');
+export function useCan(permission: Permission): boolean {
+  return useAuthStore((s) => can(s.user?.role ?? 'guest', permission));
+}
+
+/** Сотрудник — любой, кто не просто гость. */
+export function useIsStaff(): boolean {
+  return useAuthStore((s) => isStaff(s.user?.role ?? 'guest'));
 }

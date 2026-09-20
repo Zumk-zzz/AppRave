@@ -5,7 +5,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { Badge, Button, Card, Chip, ChipRow, Screen, Stepper, Text } from '@/src/components';
-import { AdminHeader } from '@/src/features/admin/AdminHeader';
 import { formatEventDate, pluralWithCount } from '@/src/lib/format';
 import {
   describe,
@@ -15,12 +14,31 @@ import {
   VERDICT_TITLE,
   type ScanSummary,
 } from '@/src/lib/ticket';
+import { useCan } from '@/src/store/auth';
 import { useCatalogStore } from '@/src/store/catalog';
 import { useOrdersStore } from '@/src/store/orders';
 import { colors, radius, spacing } from '@/src/theme';
 
 /** Пауза после срабатывания: иначе камера шлёт один и тот же код десятки раз в секунду. */
 const RESCAN_DELAY = 2000;
+
+/** Шапка вкладки: подписывает, что именно доступно этой роли. */
+function ScanHeader() {
+  const canEntry = useCan('scan:entry');
+  const canBar = useCan('scan:bar');
+
+  const subtitle =
+    canEntry && canBar ? 'Вход и бар' : canEntry ? 'Контроль на входе' : 'Выдача напитков';
+
+  return (
+    <View style={styles.headerBlock}>
+      <Text variant="label" tone="accent">
+        {subtitle}
+      </Text>
+      <Text variant="display">Сканер</Text>
+    </View>
+  );
+}
 
 export default function AdminScan() {
   const [permission, requestPermission] = useCameraPermissions();
@@ -120,7 +138,7 @@ export default function AdminScan() {
   if (!permission) {
     return (
       <Screen>
-        <AdminHeader title="Сканер" subtitle="Контроль на входе и у бара" />
+        <ScanHeader />
       </Screen>
     );
   }
@@ -128,7 +146,7 @@ export default function AdminScan() {
   if (!permission.granted) {
     return (
       <Screen>
-        <AdminHeader title="Сканер" subtitle="Контроль на входе и у бара" />
+        <ScanHeader />
         <View style={styles.permission}>
           <Ionicons name="camera-outline" size={40} color={colors.textFaint} />
           <Text variant="body" tone="muted" style={styles.center}>
@@ -146,7 +164,7 @@ export default function AdminScan() {
   return (
     <Screen scroll padded={false}>
       <View style={styles.padded}>
-        <AdminHeader title="Сканер" subtitle="Контроль на входе и у бара" />
+        <ScanHeader />
       </View>
 
       <ChipRow>
@@ -328,6 +346,10 @@ export default function AdminScan() {
 const styles = StyleSheet.create({
   padded: {
     paddingHorizontal: spacing.lg,
+  },
+  headerBlock: {
+    gap: spacing.xs,
+    marginBottom: spacing.lg,
   },
   cameraWrap: {
     marginTop: spacing.lg,

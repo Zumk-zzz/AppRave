@@ -6,10 +6,11 @@
  * пережила сериализацию в secure-store и в сетевой ответ без сюрпризов.
  */
 
-export type LoyaltyTier = 'silver' | 'gold' | 'black';
+import type { UserRole } from '@/src/lib/permissions';
 
-/** Роль определяет, видит ли пользователь раздел администрирования. */
-export type UserRole = 'guest' | 'admin';
+export type { UserRole };
+
+export type LoyaltyTier = 'silver' | 'gold' | 'black';
 
 export interface User {
   id: string;

@@ -9,14 +9,15 @@ import { FloorLegend, FloorMap } from '@/src/features/tables/FloorMap';
 import { GuestListSheet } from '@/src/features/tables/GuestListSheet';
 import { formatEventDate, formatPrice, pluralWithCount } from '@/src/lib/format';
 import { bookingService, eventsService, type ClubEvent, type ClubTable } from '@/src/services';
-import { useIsAdmin } from '@/src/store/auth';
+import { useCan } from '@/src/store/auth';
 import { useCartStore } from '@/src/store/cart';
 import { colors, spacing } from '@/src/theme';
 
 export default function TablesTab() {
   const addToCart = useCartStore((s) => s.add);
   const cartItems = useCartStore((s) => s.items);
-  const isAdmin = useIsAdmin();
+  // Персонал не покупает: у него нет права purchase
+  const canBuy = useCan('purchase');
 
   const [events, setEvents] = useState<ClubEvent[] | null>(null);
   const [eventId, setEventId] = useState<string | null>(null);
@@ -119,7 +120,7 @@ export default function TablesTab() {
                 <FloorMap tables={tables} selectedId={selected?.id ?? null} onSelect={handleSelect} />
                 <FloorLegend />
 
-                {!isAdmin && bookedLine && (
+                {canBuy && bookedLine && (
                   <Card style={styles.booked}>
                     <View style={styles.bookedRow}>
                       <View style={styles.flex}>
@@ -158,7 +159,7 @@ export default function TablesTab() {
                       Депозит целиком идёт в счёт заказа — это не плата за сам стол.
                     </Text>
 
-                    {isAdmin ? (
+                    {!canBuy ? (
                       <ViewOnlyNote text="Режим администратора: схема доступна для проверки, бронирование — нет." />
                     ) : (
                       <>

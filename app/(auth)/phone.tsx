@@ -5,7 +5,7 @@ import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, TextInput, View 
 
 import { Button, Screen, Text } from '@/src/components';
 import { extractDigits, formatPhone, isPhoneComplete, toE164 } from '@/src/lib/phone';
-import { ADMIN_PHONE, authService } from '@/src/services';
+import { authService } from '@/src/services';
 import { colors, fonts, radius, spacing } from '@/src/theme';
 
 export default function PhoneScreen() {
@@ -90,7 +90,8 @@ export default function PhoneScreen() {
             </Text>
           ) : (
             <Text variant="caption" tone="faint">
-              Демо: {formatPhone(ADMIN_PHONE.replace(/^\+7/, ''))} — вход администратором
+              Демо: 900 000-00-0X — роли сотрудников (0 админ, 1 менеджер,
+              2 бармен, 3 фейс-контроль). Любой другой номер — гость.
             </Text>
           )}
         </View>

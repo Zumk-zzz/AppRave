@@ -8,6 +8,7 @@ import { Badge, Button, Card, Screen, Text } from '@/src/components';
 import { AdminHeader } from '@/src/features/admin/AdminHeader';
 import { formatPrice } from '@/src/lib/format';
 import { adminService } from '@/src/services';
+import { useCan } from '@/src/store/auth';
 import { useCatalogStore } from '@/src/store/catalog';
 import { useOrdersStore } from '@/src/store/orders';
 import { colors, radius, spacing } from '@/src/theme';
@@ -19,6 +20,7 @@ export default function AdminDashboard() {
   const barMenu = useCatalogStore((s) => s.barMenu);
   const stock = useCatalogStore((s) => s.stock);
   const orders = useOrdersStore((s) => s.orders);
+  const canManageStaff = useCan('staff:manage');
 
   const [resetting, setResetting] = useState(false);
 
@@ -90,17 +92,19 @@ export default function AdminDashboard() {
           onPress={() => router.push('/admin/tables')}
         />
         <Section
-          icon="qr-code"
-          title="Сканер на входе"
-          hint="Проверка билетов по QR"
-          onPress={() => router.push('/admin/scan')}
-        />
-        <Section
           icon="receipt"
           title="Заказы гостей"
           hint={`${orders.length} за всё время`}
           onPress={() => router.push('/admin/orders')}
         />
+        {canManageStaff && (
+          <Section
+            icon="people"
+            title="Сотрудники"
+            hint="Роли бармена, фейс-контроля, менеджера"
+            onPress={() => router.push('/admin/staff')}
+          />
+        )}
         <Section
           icon="stats-chart"
           title="Аналитика"

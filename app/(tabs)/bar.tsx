@@ -6,7 +6,7 @@ import { Badge, Card, Chip, ChipRow, Screen, Stepper, Text, ViewOnlyNote } from 
 import { CATEGORY_LABEL, CATEGORY_ORDER } from '@/src/data/bar';
 import { formatPrice, pluralWithCount } from '@/src/lib/format';
 import { barService, eventsService, type BarCategory, type BarItem, type ClubEvent } from '@/src/services';
-import { useIsAdmin } from '@/src/store/auth';
+import { useCan } from '@/src/store/auth';
 import { buildLineId, useCartStore } from '@/src/store/cart';
 import { colors, spacing } from '@/src/theme';
 
@@ -16,7 +16,8 @@ export default function BarTab() {
   const items = useCartStore((s) => s.items);
   const add = useCartStore((s) => s.add);
   const setQty = useCartStore((s) => s.setQty);
-  const isAdmin = useIsAdmin();
+  // Персонал не покупает: у него нет права purchase
+  const canBuy = useCan('purchase');
 
   const [events, setEvents] = useState<ClubEvent[] | null>(null);
   const [eventId, setEventId] = useState<string | null>(null);
@@ -114,7 +115,7 @@ export default function BarTab() {
           {event && (
             <Text variant="caption" tone="faint" style={styles.eventNote}>
               Заказ к вечеринке {event.title}
-              {!isAdmin && barCount > 0
+              {canBuy && barCount > 0
                 ? ` · ${pluralWithCount(barCount, 'позиция', 'позиции', 'позиций')} на ${formatPrice(barTotal)}`
                 : ''}
             </Text>
@@ -170,7 +171,7 @@ export default function BarTab() {
                     <Text variant="caption" tone="danger">
                       Закончилось
                     </Text>
-                  ) : isAdmin ? null : (
+                  ) : !canBuy ? null : (
                     <Stepper value={qty} onChange={(next) => changeQty(item, next)} max={20} />
                   )}
                 </Card>

@@ -10,7 +10,7 @@ import { Badge, Button, Card, Stepper, Text, ViewOnlyNote } from '@/src/componen
 import { GENRE_LABEL, isTicketSoldOut } from '@/src/lib/events';
 import { formatEventDate, formatPrice, pluralWithCount } from '@/src/lib/format';
 import { eventsService, type ClubEvent, type TicketType } from '@/src/services';
-import { useIsAdmin } from '@/src/store/auth';
+import { useCan } from '@/src/store/auth';
 import { selectCount, useCartStore } from '@/src/store/cart';
 import { colors, radius, spacing } from '@/src/theme';
 
@@ -23,7 +23,8 @@ export default function EventScreen() {
 
   const addToCart = useCartStore((s) => s.add);
   const cartCount = useCartStore(selectCount);
-  const isAdmin = useIsAdmin();
+  // Персонал не покупает: у него нет права purchase
+  const canBuy = useCan('purchase');
 
   const [event, setEvent] = useState<ClubEvent | null>(null);
   const [loading, setLoading] = useState(true);
@@ -194,7 +195,7 @@ export default function EventScreen() {
             })}
           </View>
 
-          {selected && !isAdmin && (
+          {selected && canBuy && (
             <View style={styles.qtyRow}>
               <View>
                 <Text variant="bodyStrong">Количество</Text>
@@ -222,7 +223,7 @@ export default function EventScreen() {
       {/* Панель покупки. Администратору вместо неё — пояснение:
           он видит афишу глазами гостя, но купить не может. */}
       <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.md }]}>
-        {isAdmin ? (
+        {!canBuy ? (
           <ViewOnlyNote text="Режим администратора: так карточку видит гость. Покупка недоступна." />
         ) : (
           <>
@@ -244,7 +245,7 @@ export default function EventScreen() {
         )}
       </View>
 
-      {!isAdmin && cartCount > 0 && (
+      {canBuy && cartCount > 0 && (
         <Pressable
           accessibilityRole="button"
           onPress={() => router.push('/checkout')}

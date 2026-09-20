@@ -3,23 +3,52 @@ import { Tabs } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 
 import { CartBar } from '@/src/features/cart/CartBar';
+import { canAny, type Permission } from '@/src/lib/permissions';
 import { useAuthStore } from '@/src/store/auth';
 import { colors, fonts, fontSize } from '@/src/theme';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
-const TABS: {
+interface TabDef {
   name: string;
   title: string;
   icon: IoniconName;
   iconActive: IoniconName;
-  /** Вкладка для гостя: у администратора нет ни карты, ни покупок */
-  guestOnly?: boolean;
-}[] = [
+  /**
+   * Вкладка видна, если есть хотя бы одно из прав.
+   * Пусто — видна всем.
+   */
+  needs?: Permission[];
+}
+
+/**
+ * Полный набор вкладок. Каждая роль видит только свои — их четыре-пять,
+ * а не восемь.
+ *
+ * Экраны остаются зарегистрированными и просто пропадают из таб-бара
+ * через href: null. Убрать сам Tabs.Screen нельзя — expo-router требует
+ * объявления для каждого существующего файла маршрута.
+ */
+const TABS: TabDef[] = [
   { name: 'index', title: 'Афиша', icon: 'flash-outline', iconActive: 'flash' },
-  { name: 'tables', title: 'Столики', icon: 'grid-outline', iconActive: 'grid' },
-  { name: 'bar', title: 'Бар', icon: 'wine-outline', iconActive: 'wine' },
-  { name: 'card', title: 'Карта', icon: 'card-outline', iconActive: 'card', guestOnly: true },
+  {
+    name: 'scan',
+    title: 'Сканер',
+    icon: 'qr-code-outline',
+    iconActive: 'qr-code',
+    needs: ['scan:entry', 'scan:bar'],
+  },
+  { name: 'queue', title: 'Очередь', icon: 'list-outline', iconActive: 'list', needs: ['scan:bar'] },
+  {
+    name: 'guests',
+    title: 'Гости',
+    icon: 'people-outline',
+    iconActive: 'people',
+    needs: ['scan:entry'],
+  },
+  { name: 'tables', title: 'Столики', icon: 'grid-outline', iconActive: 'grid', needs: ['purchase'] },
+  { name: 'bar', title: 'Бар', icon: 'wine-outline', iconActive: 'wine', needs: ['purchase'] },
+  { name: 'card', title: 'Карта', icon: 'card-outline', iconActive: 'card', needs: ['purchase'] },
   { name: 'profile', title: 'Профиль', icon: 'person-outline', iconActive: 'person' },
 ];
 
@@ -34,7 +63,7 @@ export default function TabsLayout() {
 }
 
 function TabsNavigator() {
-  const isAdmin = useAuthStore((s) => s.user?.role === 'admin');
+  const role = useAuthStore((s) => s.user?.role ?? 'guest');
 
   return (
     <Tabs
@@ -54,22 +83,23 @@ function TabsNavigator() {
         sceneStyle: { backgroundColor: colors.bg },
       }}
     >
-      {TABS.map(({ name, title, icon, iconActive, guestOnly }) => (
-        <Tabs.Screen
-          key={name}
-          name={name}
-          options={{
-            title,
-            // Экран остаётся зарегистрированным, но пропадает из таб-бара:
-            // убрать сам Tabs.Screen нельзя — expo-router ругается на файл
-            // маршрута без объявления.
-            href: guestOnly && isAdmin ? null : undefined,
-            tabBarIcon: ({ color, focused, size }) => (
-              <Ionicons name={focused ? iconActive : icon} size={size} color={color} />
-            ),
-          }}
-        />
-      ))}
+      {TABS.map(({ name, title, icon, iconActive, needs }) => {
+        const visible = !needs || canAny(role, needs);
+
+        return (
+          <Tabs.Screen
+            key={name}
+            name={name}
+            options={{
+              title,
+              href: visible ? undefined : null,
+              tabBarIcon: ({ color, focused, size }) => (
+                <Ionicons name={focused ? iconActive : icon} size={size} color={color} />
+              ),
+            }}
+          />
+        );
+      })}
     </Tabs>
   );
 }

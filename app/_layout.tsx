@@ -10,10 +10,12 @@ import { useEffect } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import 'react-native-reanimated';
 
+import { can } from '@/src/lib/permissions';
 import { initNotifications } from '@/src/lib/reminders';
 import { useAuthStore } from '@/src/store/auth';
 import { useCatalogStore } from '@/src/store/catalog';
 import { useOrdersStore } from '@/src/store/orders';
+import { useStaffStore } from '@/src/store/staff';
 import { colors } from '@/src/theme';
 
 // Держим сплэш до загрузки шрифтов, иначе на старте мелькает системный шрифт.
@@ -36,6 +38,7 @@ export default function RootLayout() {
   const user = useAuthStore((s) => s.user);
   const loadOrders = useOrdersStore((s) => s.load);
   const loadCatalog = useCatalogStore((s) => s.load);
+  const loadStaff = useStaffStore((s) => s.load);
   const catalogLoaded = useCatalogStore((s) => s.loaded);
 
   useEffect(() => {
@@ -46,7 +49,8 @@ export default function RootLayout() {
     // Каталог должен быть в памяти раньше первого вызова сервиса — они
     // читают именно из него, а не из констант.
     void loadCatalog();
-  }, [restore, loadOrders, loadCatalog]);
+    void loadStaff();
+  }, [restore, loadOrders, loadCatalog, loadStaff]);
 
   const fontsReady = fontsLoaded || fontError;
   const authReady = status !== 'loading';
@@ -64,7 +68,14 @@ export default function RootLayout() {
   }
 
   const isAuthed = status === 'authed';
-  const isAdmin = isAuthed && user?.role === 'admin';
+  const role = user?.role ?? 'guest';
+
+  // Маршруты закрываются по правам, а не по названию роли: менеджер
+  // и админ попадают в управление одинаково, но раздел сотрудников
+  // открыт только тому, у кого есть staff:manage.
+  const canManage = isAuthed && can(role, 'catalog:write');
+  const canBuy = isAuthed && can(role, 'purchase');
+  const isStaffMember = isAuthed && !canBuy;
 
   return (
     <SafeAreaProvider>
@@ -88,15 +99,20 @@ export default function RootLayout() {
         {/* Покупки и билеты — только для гостя. Администратор сотрудник,
             а не клиент, и закрыто это на уровне роутера, а не только
             спрятанными кнопками. */}
-        <Stack.Protected guard={isAuthed && !isAdmin}>
+        <Stack.Protected guard={canBuy}>
           <Stack.Screen name="checkout" options={{ animation: 'slide_from_bottom' }} />
           <Stack.Screen name="orders" options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="ticket/[id]" options={{ animation: 'slide_from_bottom' }} />
         </Stack.Protected>
 
+        {/* Смена и журнал — для любого сотрудника, независимо от роли */}
+        <Stack.Protected guard={isStaffMember}>
+          <Stack.Screen name="shift" options={{ animation: 'slide_from_right' }} />
+        </Stack.Protected>
+
         {/* Маршруты админки недоступны гостю на уровне роутера, а не только
             спрятаны в интерфейсе: набрать /admin вручную не получится */}
-        <Stack.Protected guard={isAdmin}>
+        <Stack.Protected guard={canManage}>
           <Stack.Screen name="admin" options={{ animation: 'slide_from_right' }} />
         </Stack.Protected>
       </Stack>
