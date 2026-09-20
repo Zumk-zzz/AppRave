@@ -23,7 +23,9 @@ interface AuthState {
   setAtWork: (next: boolean) => Promise<void>;
   /** Прочитать сессию с устройства. Вызывается один раз при старте. */
   restore: () => Promise<void>;
-  signIn: (phone: string, code: string) => Promise<void>;
+  signIn: (contact: string, code: string) => Promise<void>;
+  /** Привязать второй способ входа к текущему аккаунту. */
+  linkContact: (contact: string, code: string) => Promise<void>;
   signOut: () => Promise<void>;
   /** Обновить пользователя локально — например, после начисления баллов. */
   patchUser: (patch: Partial<User>) => void;
@@ -65,13 +67,23 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ user: null, atWork: false, status: 'guest' });
   },
 
-  async signIn(phone, code) {
+  async signIn(contact, code) {
     // Ошибку намеренно не гасим: экран показывает её пользователю.
-    const user = await authService.verifyCode(phone, code);
+    const user = await authService.verifyCode(contact, code);
     await persist(user);
     // Вход всегда начинается в гостевом режиме: сотрудник включает
     // рабочий сам, когда выходит на смену.
     set({ user, atWork: false, status: 'authed' });
+  },
+
+  async linkContact(contact, code) {
+    const current = get().user;
+    if (!current) return;
+
+    // Ошибку не гасим: экран показывает её пользователю
+    const updated = await authService.linkContact(current, contact, code);
+    await persist(updated);
+    set({ user: updated });
   },
 
   async signOut() {

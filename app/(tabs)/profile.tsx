@@ -4,10 +4,11 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Badge, Button, Card, Screen, SectionHeader, Sheet, Text, Toggle } from '@/src/components';
+import { ContactsCard } from '@/src/features/profile/ContactsCard';
 import { NotificationsRow } from '@/src/features/profile/NotificationsRow';
 import { TIER_LABEL, TIER_TONE } from '@/src/lib/loyalty';
 import { ROLE_DESCRIPTION, ROLE_LABEL } from '@/src/lib/permissions';
-import { formatPhone } from '@/src/lib/phone';
+import { formatContact } from '@/src/lib/contact';
 import { useAuthStore, useCan, useStaffRole } from '@/src/store/auth';
 import { useOrdersStore } from '@/src/store/orders';
 import { colors, radius, spacing } from '@/src/theme';
@@ -27,7 +28,7 @@ export default function ProfileTab() {
 
   if (!user) return null;
 
-  const contact = user.phone ? formatPhone(user.phone.replace(/^\+7/, '')) : (user.email ?? '');
+  const contact = user.phone ? formatContact(user.phone) : (user.email ?? '');
   const initial = user.name.trim().charAt(0).toUpperCase() || 'Г';
 
   return (
@@ -112,6 +113,8 @@ export default function ProfileTab() {
           <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />
         </Card>
       )}
+
+      <ContactsCard />
 
       <View style={styles.menu}>
         {canBuy && (

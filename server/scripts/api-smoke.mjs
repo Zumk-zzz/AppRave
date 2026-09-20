@@ -45,8 +45,8 @@ async function api(path, { method = 'GET', token, body, key } = {}) {
 }
 
 async function login(phone) {
-  await api('/auth/request-code', { method: 'POST', body: { phone } });
-  const r = await api('/auth/verify', { method: 'POST', body: { phone, code: '0000' } });
+  await api('/auth/request-code', { method: 'POST', body: { contact: phone } });
+  const r = await api('/auth/verify', { method: 'POST', body: { contact: phone, code: '0000' } });
   if (!r.body?.token) throw new Error(`вход не удался: ${JSON.stringify(r.body)}`);
   return r.body;
 }
@@ -65,7 +65,7 @@ check('роль guest', guest.user.role === 'guest', guest.user.role);
 const admin = await login('+79000000000');
 check('админ получил роль admin', admin.user.role === 'admin', admin.user.role);
 
-const badCode = await api('/auth/verify', { method: 'POST', body: { phone: '+79991110001', code: '9999' } });
+const badCode = await api('/auth/verify', { method: 'POST', body: { contact: '+79991110001', code: '9999' } });
 check('неверный код отклонён', badCode.status === 400, `статус ${badCode.status}`);
 
 console.log('\n=== Каталог ===');

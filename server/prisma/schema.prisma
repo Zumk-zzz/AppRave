@@ -32,7 +32,11 @@ enum LoyaltyTier {
 
 model User {
   id        String      @id @default(uuid())
-  phone     String      @unique
+  /// Телефон и почта — равноправные каналы входа. Обязателен хотя бы один,
+  /// но какой именно — не важно: аккаунт это человек, а не строка контакта.
+  /// Проверку «хотя бы один» держит миграция, Prisma такое не выражает.
+  phone     String?     @unique
+  email     String?     @unique
   name      String
   role      UserRole    @default(guest)
   tier      LoyaltyTier @default(silver)
@@ -388,15 +392,26 @@ model BanEntry {
   @@map("ban_entries")
 }
 
-/// Одноразовые коды подтверждения телефона.
-model SmsCode {
-  id        String   @id @default(uuid())
-  phone     String
-  code      String
-  expiresAt DateTime @map("expires_at")
-  usedAt    DateTime? @map("used_at")
-  createdAt DateTime @default(now()) @map("created_at")
+enum LoginChannel {
+  phone
+  email
+}
 
-  @@index([phone, createdAt])
-  @@map("sms_codes")
+/// Одноразовые коды входа.
+///
+/// Код привязан к каналу связи, а не к номеру как к личности: один
+/// и тот же человек может войти и по телефону, и по почте — попадёт
+/// в тот же аккаунт.
+model LoginCode {
+  id          String       @id @default(uuid())
+  channel     LoginChannel
+  /// Нормализованный контакт: +7XXXXXXXXXX или почта в нижнем регистре
+  destination String
+  code        String
+  expiresAt   DateTime     @map("expires_at")
+  usedAt      DateTime?    @map("used_at")
+  createdAt   DateTime     @default(now()) @map("created_at")
+
+  @@index([destination, createdAt])
+  @@map("login_codes")
 }

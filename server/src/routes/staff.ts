@@ -5,13 +5,12 @@ import { z } from 'zod';
 import { readAuth, requirePermission, requireUser } from '../auth/guard.js';
 import { db } from '../db.js';
 import { badRequest, conflict, forbidden, notFound } from '../lib/http-error.js';
-import { memberNoFor } from '../lib/ids.js';
+import { parseContact } from '../lib/contact.js';
+import { allocateMemberNo } from '../lib/ids.js';
 import { ASSIGNABLE_ROLES, can, type UserRole } from '../lib/permissions.js';
 
-const phoneSchema = z
-  .string()
-  .transform((raw) => `+7${raw.replace(/\D/g, '').replace(/^[78]/, '').slice(0, 10)}`)
-  .refine((v) => /^\+7\d{10}$/.test(v), 'Некорректный номер телефона');
+/** Контакт сотрудника: телефон или почта, роль выдаётся аккаунту. */
+const contactSchema = z.string().min(3);
 
 export async function staffRoutes(app: FastifyInstance) {
   /**
@@ -36,9 +35,9 @@ export async function staffRoutes(app: FastifyInstance) {
 
     if (!order) throw notFound('Заказ не найден');
 
-    const ban = await db.banEntry.findFirst({
-      where: { phone: order.user.phone, liftedAt: null },
-    });
+    const ban = order.user.phone
+      ? await db.banEntry.findFirst({ where: { phone: order.user.phone, liftedAt: null } })
+      : null;
 
     return {
       order: toScanDto(order),
@@ -65,7 +64,9 @@ export async function staffRoutes(app: FastifyInstance) {
       throw conflict('Заказ не оплачен', 'not_paid');
     }
 
-    const ban = await db.banEntry.findFirst({ where: { phone: order.user.phone, liftedAt: null } });
+    const ban = order.user.phone
+      ? await db.banEntry.findFirst({ where: { phone: order.user.phone, liftedAt: null } })
+      : null;
     if (ban) throw conflict(`Отказ во входе: ${ban.reason}`, 'banned');
 
     const admitted = await db.$transaction(async (tx) => {
@@ -219,7 +220,7 @@ export async function staffRoutes(app: FastifyInstance) {
     const members = await db.user.findMany({
       where: { role: { not: 'guest' } },
       orderBy: { createdAt: 'asc' },
-      select: { id: true, name: true, phone: true, role: true, createdAt: true },
+      select: { id: true, name: true, phone: true, email: true, role: true, createdAt: true },
     });
 
     return members.map((m) => ({ ...m, createdAt: m.createdAt.toISOString() }));
@@ -233,25 +234,41 @@ export async function staffRoutes(app: FastifyInstance) {
    */
   app.post('/staff/members', async (req) => {
     const auth = requirePermission(req, 'staff:manage');
-    const { phone, role, name } = z
+    const parsed = z
       .object({
-        phone: phoneSchema,
+        contact: contactSchema,
         role: z.enum(ASSIGNABLE_ROLES as [UserRole, ...UserRole[]]),
         name: z.string().min(1).max(80).default('Сотрудник'),
       })
       .parse(req.body);
 
-    const user = await db.user.upsert({
-      where: { phone },
-      update: { role },
-      create: { phone, name, role, memberNo: memberNoFor(phone) },
-    });
+    const { channel, value } = parseContact(parsed.contact);
+
+    // Должность назначается аккаунту, а не строке контакта: сотрудник
+    // мог ещё ни разу не заходить — тогда аккаунт заводится сейчас,
+    // и роль он получит при первом входе любым каналом.
+    const existing =
+      channel === 'phone'
+        ? await db.user.findUnique({ where: { phone: value } })
+        : await db.user.findUnique({ where: { email: value } });
+
+    const user = existing
+      ? await db.user.update({ where: { id: existing.id }, data: { role: parsed.role } })
+      : await db.user.create({
+          data: {
+            phone: channel === 'phone' ? value : null,
+            email: channel === 'email' ? value : null,
+            name: parsed.name,
+            role: parsed.role,
+            memberNo: await freeMemberNo(value),
+          },
+        });
 
     await logAction(auth.sub, 'role_granted', {
-      details: { phone, role, userId: user.id },
+      details: { contact: value, role: parsed.role, userId: user.id },
     });
 
-    return { id: user.id, name: user.name, phone: user.phone, role: user.role };
+    return { id: user.id, name: user.name, phone: user.phone, email: user.email, role: user.role };
   });
 
   /** Отозвать роль: сотрудник становится обычным гостем. */
@@ -270,7 +287,7 @@ export async function staffRoutes(app: FastifyInstance) {
 
     await db.user.update({ where: { id }, data: { role: 'guest' } });
     await logAction(auth.sub, 'role_revoked', {
-      details: { phone: user.phone, previousRole: user.role, userId: id },
+      details: { contact: user.phone ?? user.email, previousRole: user.role, userId: id },
     });
 
     return { ok: true };
@@ -296,9 +313,11 @@ export async function staffRoutes(app: FastifyInstance) {
 
   app.post('/staff/bans', async (req) => {
     const auth = requirePermission(req, 'scan:entry');
-    const { phone, reason } = z
-      .object({ phone: phoneSchema, reason: z.string().min(3).max(300) })
+    const parsed = z
+      .object({ phone: contactSchema, reason: z.string().min(3).max(300) })
       .parse(req.body);
+    const phone = parseContact(parsed.phone).value;
+    const reason = parsed.reason;
 
     const ban = await db.banEntry.upsert({
       where: { phone },
@@ -339,7 +358,7 @@ export async function staffRoutes(app: FastifyInstance) {
       return {
         number: o.number,
         name: o.user.name,
-        phone: o.user.phone,
+        contact: o.user.phone ?? o.user.email,
         tickets: tickets.reduce((n, l) => n + l.qty, 0),
         admitted: tickets.reduce((n, l) => n + l.redeemed, 0),
         table: o.bookings[0]?.table.label ?? null,
@@ -452,4 +471,12 @@ async function logAction(
   } catch {
     // Молча: действие уже выполнено, и ронять ответ из-за журнала нельзя
   }
+}
+
+/** Свободный номер карты: проверку занятости делает база. */
+async function freeMemberNo(contact: string): Promise<string> {
+  return allocateMemberNo(
+    async (candidate) => (await db.user.count({ where: { memberNo: candidate } })) > 0,
+    contact,
+  );
 }

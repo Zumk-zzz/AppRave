@@ -18,8 +18,8 @@ async function api(path, { method = 'GET', token, body, key } = {}) {
 }
 
 async function login(phone) {
-  await api('/auth/request-code', { method: 'POST', body: { phone } });
-  const r = await api('/auth/verify', { method: 'POST', body: { phone, code: '0000' } });
+  await api('/auth/request-code', { method: 'POST', body: { contact: phone } });
+  const r = await api('/auth/verify', { method: 'POST', body: { contact: phone, code: '0000' } });
   if (!r.body?.token) throw new Error(`вход не удался: ${JSON.stringify(r.body)}`);
   return r.body;
 }
@@ -41,7 +41,7 @@ check('админ вошёл', admin.user.role === 'admin', admin.user.role);
 for (const [role, phone] of [['bartender', PHONES.bartender], ['doorman', PHONES.doorman], ['manager', PHONES.manager]]) {
   const r = await api('/staff/members', {
     method: 'POST', token: admin.token,
-    body: { phone, role, name: role === 'bartender' ? 'Бармен Иван' : role === 'doorman' ? 'Фейсер Пётр' : 'Менеджер Анна' },
+    body: { contact: phone, role, name: role === 'bartender' ? 'Бармен Иван' : role === 'doorman' ? 'Фейсер Пётр' : 'Менеджер Анна' },
   });
   check(`роль ${role} выдана`, r.status === 200 && r.body?.role === role, `статус ${r.status}`);
 }
@@ -66,10 +66,10 @@ for (const [who, token] of [['бармен', bartender.token], ['фейсер', 
   check(`${who} не может покупать`, r.status === 403, `статус ${r.status}`);
 }
 
-const b1 = await api('/staff/members', { method: 'POST', token: bartender.token, body: { phone: '+79009998877', role: 'doorman' } });
+const b1 = await api('/staff/members', { method: 'POST', token: bartender.token, body: { contact: '+79009998877', role: 'doorman' } });
 check('бармен не может выдавать роли', b1.status === 403, `статус ${b1.status}`);
 
-const m1 = await api('/staff/members', { method: 'POST', token: manager.token, body: { phone: '+79009998877', role: 'doorman' } });
+const m1 = await api('/staff/members', { method: 'POST', token: manager.token, body: { contact: '+79009998877', role: 'doorman' } });
 check('менеджер тоже не может выдавать роли', m1.status === 403, `статус ${m1.status}`);
 
 const g1 = await api('/staff/actions', { token: guest.token });
@@ -168,7 +168,7 @@ check('после снятия отказа проход открыт', afterLif
 console.log('\n=== Списки ===');
 const gl = await api(`/staff/guest-list/${ev.id}`, { token: doorman.token });
 check('список гостей отдаётся', gl.status === 200 && gl.body.length > 0, `${gl.body?.length} записей`);
-check('в списке есть имя и телефон', !!gl.body[0]?.name && !!gl.body[0]?.phone);
+check('в списке есть имя и контакт', !!gl.body[0]?.name && !!gl.body[0]?.contact);
 
 const bq = await api(`/staff/bar-queue/${ev.id}`, { token: bartender.token });
 check('очередь бара отдаётся', bq.status === 200, `${bq.body?.length} заказов`);

@@ -4,43 +4,34 @@ import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { Button, Screen, Text } from '@/src/components';
-import { extractDigits, formatPhone, isPhoneComplete, toE164 } from '@/src/lib/phone';
+import { formatContact, parseContact } from '@/src/lib/contact';
 import { authService } from '@/src/services';
 import { colors, fonts, radius, spacing } from '@/src/theme';
 
-export default function PhoneScreen() {
+/**
+ * Вход по телефону или почте.
+ *
+ * Поле одно, тип определяется по введённому: переключатель «телефон
+ * или почта» — лишний шаг, а угадать по наличию собаки несложно.
+ */
+export default function ContactScreen() {
   const router = useRouter();
-  const [digits, setDigits] = useState('');
+  const [value, setValue] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const display = formatPhone(digits);
-
-  const handleChange = (next: string) => {
-    setError(null);
-    const nextDigits = extractDigits(next);
-
-    // Пользователь стёр символ маски — скобку или дефис. Цифры при этом
-    // не изменились, поэтому удаляем последнюю вручную, иначе ввод
-    // «залипает» и стереть номер до конца невозможно.
-    if (nextDigits === digits && next.length < display.length) {
-      setDigits(digits.slice(0, -1));
-      return;
-    }
-
-    setDigits(nextDigits);
-  };
+  const parsed = parseContact(value);
+  const looksLikeEmail = value.includes('@');
 
   const handleSubmit = async () => {
-    if (!isPhoneComplete(digits) || sending) return;
+    if (!parsed || sending) return;
 
     setSending(true);
     setError(null);
 
     try {
-      const phone = toE164(digits);
-      await authService.requestCode(phone);
-      router.push({ pathname: '/(auth)/otp', params: { phone } });
+      await authService.requestCode(parsed.value);
+      router.push({ pathname: '/(auth)/otp', params: { contact: parsed.value } });
     } catch {
       setError('Не удалось отправить код. Попробуйте ещё раз.');
     } finally {
@@ -65,21 +56,26 @@ export default function PhoneScreen() {
         </Pressable>
 
         <View style={styles.body}>
-          <Text variant="title">Ваш номер</Text>
+          <Text variant="title">Телефон или почта</Text>
           <Text variant="body" tone="muted" style={styles.lead}>
-            Пришлём код подтверждения в SMS
+            Пришлём код подтверждения — в SMS или письмом
           </Text>
 
           <TextInput
-            value={display}
-            onChangeText={handleChange}
-            placeholder="+7 (___) ___-__-__"
+            value={value}
+            onChangeText={(next) => {
+              setValue(next);
+              setError(null);
+            }}
+            placeholder="+7 900 000-00-00 или you@mail.ru"
             placeholderTextColor={colors.textFaint}
-            keyboardType="number-pad"
-            textContentType="telephoneNumber"
-            autoComplete="tel"
+            // Клавиатура подстраивается под то, что уже набрано:
+            // цифровая для номера, обычная как только появилась собака
+            keyboardType={looksLikeEmail ? 'email-address' : 'default'}
+            autoCapitalize="none"
+            autoCorrect={false}
+            autoComplete="username"
             autoFocus
-            maxLength={18}
             style={[styles.input, !!error && styles.inputError]}
             onSubmitEditing={handleSubmit}
           />
@@ -88,10 +84,14 @@ export default function PhoneScreen() {
             <Text variant="caption" tone="danger">
               {error}
             </Text>
+          ) : parsed ? (
+            <Text variant="caption" tone="accent">
+              Код придёт на {formatContact(parsed.value)}
+            </Text>
           ) : (
             <Text variant="caption" tone="faint">
               Демо: 900 000-00-0X — роли сотрудников (0 админ, 1 менеджер,
-              2 бармен, 3 фейс-контроль). Любой другой номер — гость.
+              2 бармен, 3 фейс-контроль). Любой другой контакт — гость.
             </Text>
           )}
         </View>
@@ -101,7 +101,7 @@ export default function PhoneScreen() {
             label="Получить код"
             size="lg"
             fullWidth
-            disabled={!isPhoneComplete(digits)}
+            disabled={!parsed}
             loading={sending}
             onPress={handleSubmit}
           />
@@ -135,7 +135,7 @@ const styles = StyleSheet.create({
   },
   input: {
     fontFamily: fonts.display,
-    fontSize: 26,
+    fontSize: 22,
     letterSpacing: -0.5,
     color: colors.text,
     paddingVertical: spacing.lg,

@@ -13,7 +13,9 @@
     "prisma:deploy": "prisma migrate deploy",
     "seed": "tsx prisma/seed.ts",
     "smoke": "node scripts/api-smoke.mjs",
-    "smoke:roles": "node scripts/roles-smoke.mjs"
+    "smoke:roles": "node scripts/roles-smoke.mjs",
+    "smoke:identity": "node scripts/identity-smoke.mjs",
+    "smoke:all": "npm run smoke && npm run smoke:roles && npm run smoke:identity"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

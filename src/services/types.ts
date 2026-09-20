@@ -222,10 +222,12 @@ export interface AdminService {
 }
 
 export interface AuthService {
-  /** Отправить код на номер. Возвращает, куда именно отправлен. */
-  requestCode(phone: string): Promise<{ sentTo: string }>;
+  /** Отправить код на телефон или почту. Возвращает, куда именно отправлен. */
+  requestCode(contact: string): Promise<{ sentTo: string; channel: 'phone' | 'email' }>;
   /** Проверить код и получить пользователя. Бросает при неверном коде. */
-  verifyCode(phone: string, code: string): Promise<User>;
+  verifyCode(contact: string, code: string): Promise<User>;
+  /** Привязать второй канал к текущему аккаунту. */
+  linkContact(user: User, contact: string, code: string): Promise<User>;
 }
 
 /** Неверный код подтверждения — экран отличает эту ошибку от сетевой. */

@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { Button, Screen, Text } from '@/src/components';
-import { formatPhone } from '@/src/lib/phone';
+import { formatContact, parseContact } from '@/src/lib/contact';
 import { authService, DEMO_CODE, InvalidCodeError } from '@/src/services';
 import { useAuthStore } from '@/src/store/auth';
 import { colors, fonts, radius, spacing } from '@/src/theme';
@@ -15,7 +15,7 @@ const RESEND_SECONDS = 30;
 
 export default function OtpScreen() {
   const router = useRouter();
-  const { phone } = useLocalSearchParams<{ phone: string }>();
+  const { contact } = useLocalSearchParams<{ contact: string }>();
   const signIn = useAuthStore((s) => s.signIn);
 
   const inputRef = useRef<TextInput>(null);
@@ -37,7 +37,7 @@ export default function OtpScreen() {
     setError(null);
 
     try {
-      await signIn(phone ?? '', value);
+      await signIn(contact ?? '', value);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       // Никакой навигации: guard в корневом layout сам перебросит в (tabs),
       // как только статус станет authed.
@@ -67,13 +67,15 @@ export default function OtpScreen() {
     setSecondsLeft(RESEND_SECONDS);
     setError(null);
     try {
-      await authService.requestCode(phone ?? '');
+      await authService.requestCode(contact ?? '');
     } catch {
       setError('Не удалось отправить код повторно');
     }
   };
 
-  const prettyPhone = phone ? formatPhone(phone.replace(/^\+7/, '')) : '';
+  const prettyContact = contact ? formatContact(contact) : '';
+  // Заголовок зависит от канала: «код из SMS» на письме выглядит ошибкой
+  const isEmail = parseContact(contact ?? '')?.channel === 'email';
 
   return (
     <Screen>
@@ -88,9 +90,9 @@ export default function OtpScreen() {
       </Pressable>
 
       <View style={styles.body}>
-        <Text variant="title">Код из SMS</Text>
+        <Text variant="title">{isEmail ? 'Код из письма' : 'Код из SMS'}</Text>
         <Text variant="body" tone="muted" style={styles.lead}>
-          Отправили на {prettyPhone}
+          Отправили на {prettyContact}
         </Text>
 
         {/* Настоящий ввод спрятан под ячейками: так работает системная
