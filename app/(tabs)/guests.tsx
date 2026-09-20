@@ -4,10 +4,13 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { Alert, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
-import { Badge, Button, Card, Chip, ChipRow, Screen, Text } from '@/src/components';
+import { Badge, Button, Card, Chip, ChipRow, Field, Screen, Segmented, Sheet, Text } from '@/src/components';
 import { pluralWithCount } from '@/src/lib/format';
 import { eventsService, type ClubEvent, type Order } from '@/src/services';
+import { formatContact } from '@/src/lib/contact';
+import { useAuthStore, useRole } from '@/src/store/auth';
 import { redeemableOf, useOrdersStore } from '@/src/store/orders';
+import { useStaffStore } from '@/src/store/staff';
 import { colors, fonts, fontSize, radius, spacing } from '@/src/theme';
 
 /**
@@ -21,9 +24,19 @@ export default function GuestsTab() {
   const orders = useOrdersStore((s) => s.orders);
   const redeemEntry = useOrdersStore((s) => s.redeemEntry);
 
+  const me = useAuthStore((s) => s.user);
+  const myRole = useRole();
+  const bans = useStaffStore((s) => s.bans);
+  const addBan = useStaffStore((s) => s.addBan);
+  const liftBan = useStaffStore((s) => s.liftBan);
+  const log = useStaffStore((s) => s.log);
+
   const [events, setEvents] = useState<ClubEvent[]>([]);
   const [eventId, setEventId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+  const [tab, setTab] = useState<'list' | 'bans'>('list');
+  const [banTarget, setBanTarget] = useState<{ contact: string; name?: string } | null>(null);
+  const [reason, setReason] = useState('');
 
   useFocusEffect(
     useCallback(() => {
@@ -35,6 +48,8 @@ export default function GuestsTab() {
     }, []),
   );
 
+  const activeBans = useMemo(() => bans.filter((b) => !b.liftedAt), [bans]);
+
   const rows = useMemo(() => {
     const needle = query.trim().toLowerCase();
 
@@ -43,9 +58,14 @@ export default function GuestsTab() {
       .map((order) => {
         const tickets = order.lines.filter((l) => l.kind === 'ticket');
         const table = order.lines.find((l) => l.kind === 'table');
+        // Заказ в моке не хранит контакт гостя — используем номер карты
+        // из QR как устойчивый признак человека
+        const contact = order.qrPayload.split('|')[2];
 
         return {
           order,
+          contact,
+          ban: activeBans.find((b) => b.contact === contact),
           total: tickets.reduce((n, l) => n + l.qty, 0),
           left: tickets.reduce((n, l) => n + redeemableOf(l), 0),
           table: table?.title,
@@ -62,11 +82,37 @@ export default function GuestsTab() {
           (row.table?.toLowerCase().includes(needle) ?? false)
         );
       });
-  }, [orders, eventId, query]);
+  }, [orders, eventId, query, activeBans]);
 
   const waiting = rows.reduce((n, r) => n + r.left, 0);
 
-  const handleManualAdmit = (order: Order) => {
+  const handleBan = async () => {
+    if (!banTarget || reason.trim().length < 3 || !me) return;
+
+    await addBan({ contact: banTarget.contact, name: banTarget.name, reason: reason.trim() });
+    log({
+      kind: 'entry_manual',
+      actorId: me.id,
+      actorName: me.name,
+      actorRole: myRole,
+      summary: `Отказ: ${reason.trim()}`,
+    });
+
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    setBanTarget(null);
+    setReason('');
+  };
+
+  const handleManualAdmit = (order: Order, ban?: { reason: string }) => {
+    if (ban) {
+      // Отказ не обходится «на всякий случай»: если решение изменилось,
+      // его надо явно снять в стоп-листе, и это останется в истории
+      Alert.alert('Гость в стоп-листе', `Причина: ${ban.reason}
+
+Снимите отказ, если решение изменилось.`);
+      return;
+    }
+
     Alert.alert(
       'Пропустить без кода?',
       'Гость не показал QR. Отметка попадёт в журнал как ручной пропуск.',
@@ -115,6 +161,55 @@ export default function GuestsTab() {
         </View>
       </View>
 
+      <View style={styles.padded}>
+        <Segmented
+          options={[
+            { value: 'list', label: 'Гости' },
+            {
+              value: 'bans',
+              label: activeBans.length > 0 ? `Стоп-лист · ${activeBans.length}` : 'Стоп-лист',
+            },
+          ]}
+          value={tab}
+          onChange={setTab}
+        />
+      </View>
+
+      {tab === 'bans' ? (
+        <View style={styles.list}>
+          {activeBans.length === 0 ? (
+            <Text variant="body" tone="muted" style={styles.center}>
+              Стоп-лист пуст. Сюда попадают те, кому отказано во входе.
+            </Text>
+          ) : (
+            activeBans.map((ban) => (
+              <Card key={ban.id} style={styles.card}>
+                <View style={styles.cardHead}>
+                  <View style={styles.flex}>
+                    <Text variant="bodyStrong">{ban.name ?? formatContact(ban.contact)}</Text>
+                    <Text variant="caption" tone="faint">
+                      {ban.contact}
+                    </Text>
+                  </View>
+                  <Badge label="Отказ" tone="danger" />
+                </View>
+
+                <Text variant="body" tone="muted">
+                  {ban.reason}
+                </Text>
+
+                <Button
+                  label="Снять отказ"
+                  variant="ghost"
+                  fullWidth
+                  onPress={() => void liftBan(ban.id)}
+                />
+              </Card>
+            ))
+          )}
+        </View>
+      ) : (
+      <>
       <ChipRow>
         {events.map((e) => (
           <Chip
@@ -144,12 +239,14 @@ export default function GuestsTab() {
                   )}
                 </View>
 
-                {row.total > 0 && (
+                {row.ban ? (
+                  <Badge label="Отказ" tone="danger" />
+                ) : row.total > 0 ? (
                   <Badge
                     label={row.left > 0 ? `${row.left} из ${row.total}` : 'Прошли'}
                     tone={row.left > 0 ? 'accent' : 'success'}
                   />
-                )}
+                ) : null}
               </View>
 
               {row.guests.length > 0 && (
@@ -159,18 +256,70 @@ export default function GuestsTab() {
                 </Text>
               )}
 
+              {row.ban && (
+                <Text variant="caption" tone="danger">
+                  Отказ во входе: {row.ban.reason}
+                </Text>
+              )}
+
               {row.left > 0 && (
                 <Button
-                  label="Пропустить без кода"
+                  label={row.ban ? 'В стоп-листе' : 'Пропустить без кода'}
                   variant="outline"
                   fullWidth
-                  onPress={() => handleManualAdmit(row.order)}
+                  onPress={() => handleManualAdmit(row.order, row.ban)}
+                />
+              )}
+
+              {!row.ban && (
+                <Button
+                  label="Отказать во входе"
+                  variant="ghost"
+                  fullWidth
+                  onPress={() =>
+                    setBanTarget({ contact: row.contact, name: row.guests[0] ?? row.order.id })
+                  }
                 />
               )}
             </Card>
           ))
         )}
       </View>
+      </>
+      )}
+
+      <Sheet
+        visible={banTarget !== null}
+        onClose={() => {
+          setBanTarget(null);
+          setReason('');
+        }}
+        title="Отказать во входе"
+      >
+        <View style={styles.sheet}>
+          <Text variant="body" tone="muted">
+            Гость попадёт в стоп-лист. При сканировании кода отказ увидит любой
+            сотрудник на входе.
+          </Text>
+
+          <Field
+            label="Причина"
+            value={reason}
+            onChangeText={setReason}
+            placeholder="Драка 12.09, отказ администрации"
+            multiline
+            hint="Причина обязательна: через месяц никто не вспомнит, за что"
+          />
+
+          <Button
+            label="Внести в стоп-лист"
+            size="lg"
+            fullWidth
+            disabled={reason.trim().length < 3}
+            onPress={handleBan}
+          />
+        </View>
+      </Sheet>
     </Screen>
   );
 }
@@ -223,6 +372,10 @@ const styles = StyleSheet.create({
   center: {
     textAlign: 'center',
     paddingVertical: spacing.xxl,
+  },
+  sheet: {
+    gap: spacing.lg,
+    paddingBottom: spacing.sm,
   },
   flex: {
     flex: 1,

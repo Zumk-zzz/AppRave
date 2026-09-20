@@ -6,6 +6,7 @@ import type { UserRole } from '@/src/lib/permissions';
 const SHIFTS_KEY = 'apprave.shifts';
 const ACTIONS_KEY = 'apprave.staff-actions';
 const MEMBERS_KEY = 'apprave.staff-members';
+const BANS_KEY = 'apprave.bans';
 
 export type StaffActionKind =
   | 'entry_admitted'
@@ -38,6 +39,17 @@ export interface Shift {
   note?: string;
 }
 
+export interface BanEntry {
+  id: string;
+  /** Контакт гостя: телефон или почта */
+  contact: string;
+  /** Имя на момент отказа — контакт может смениться, память должна остаться */
+  name?: string;
+  reason: string;
+  createdAt: string;
+  liftedAt?: string;
+}
+
 export interface StaffMember {
   id: string;
   phone: string;
@@ -50,6 +62,7 @@ interface StaffState {
   shifts: Shift[];
   actions: StaffAction[];
   members: StaffMember[];
+  bans: BanEntry[];
   loaded: boolean;
 
   load: () => Promise<void>;
@@ -63,30 +76,40 @@ interface StaffState {
 
   addMember: (member: Omit<StaffMember, 'id' | 'addedAt'>) => Promise<void>;
   removeMember: (id: string) => Promise<void>;
+
+  /** Внести гостя в стоп-лист. */
+  addBan: (input: { contact: string; name?: string; reason: string }) => Promise<void>;
+  /** Снять отказ. Запись остаётся: история отказов не должна пропадать. */
+  liftBan: (id: string) => Promise<void>;
+  /** Действующий отказ по контакту, если он есть. */
+  banFor: (contact?: string) => BanEntry | undefined;
 }
 
 export const useStaffStore = create<StaffState>((set, get) => ({
   shifts: [],
   actions: [],
   members: [],
+  bans: [],
   loaded: false,
 
   async load() {
     try {
-      const [s, a, m] = await Promise.all([
+      const [s, a, m, b] = await Promise.all([
         AsyncStorage.getItem(SHIFTS_KEY),
         AsyncStorage.getItem(ACTIONS_KEY),
         AsyncStorage.getItem(MEMBERS_KEY),
+        AsyncStorage.getItem(BANS_KEY),
       ]);
 
       set({
         shifts: s ? JSON.parse(s) : [],
         actions: a ? JSON.parse(a) : [],
         members: m ? JSON.parse(m) : [],
+        bans: b ? JSON.parse(b) : [],
         loaded: true,
       });
     } catch {
-      set({ shifts: [], actions: [], members: [], loaded: true });
+      set({ shifts: [], actions: [], members: [], bans: [], loaded: true });
     }
   },
 
@@ -158,6 +181,43 @@ export const useStaffStore = create<StaffState>((set, get) => ({
     set({ members });
     await persist(MEMBERS_KEY, members);
   },
+
+  async addBan({ contact, name, reason }) {
+    const existing = get().bans.find((b) => b.contact === contact);
+
+    // Повторный отказ по тому же контакту обновляет причину и снимает
+    // отметку о снятии, а не плодит вторую запись
+    const bans = existing
+      ? get().bans.map((b) =>
+          b.contact === contact ? { ...b, reason, name: name ?? b.name, liftedAt: undefined } : b,
+        )
+      : [
+          {
+            id: `ban_${Date.now()}`,
+            contact,
+            name,
+            reason,
+            createdAt: new Date().toISOString(),
+          },
+          ...get().bans,
+        ];
+
+    set({ bans });
+    await persist(BANS_KEY, bans);
+  },
+
+  async liftBan(id) {
+    const bans = get().bans.map((b) =>
+      b.id === id ? { ...b, liftedAt: new Date().toISOString() } : b,
+    );
+    set({ bans });
+    await persist(BANS_KEY, bans);
+  },
+
+  banFor(contact) {
+    if (!contact) return undefined;
+    return get().bans.find((b) => b.contact === contact && !b.liftedAt);
+  },
 }));
 
 /** Действия сотрудника за его текущую смену. */
@@ -167,6 +227,8 @@ export function selectShiftActions(state: StaffState, userId: string): StaffActi
 
   return state.actions.filter((a) => a.shiftId === shift.id);
 }
+
+export type { StaffActionKind as ActionKind };
 
 export const ACTION_LABEL: Record<StaffActionKind, string> = {
   entry_admitted: 'Пропуск по коду',

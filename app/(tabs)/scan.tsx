@@ -17,6 +17,7 @@ import {
 import { useCan } from '@/src/store/auth';
 import { useCatalogStore } from '@/src/store/catalog';
 import { useOrdersStore } from '@/src/store/orders';
+import { useStaffStore } from '@/src/store/staff';
 import { colors, radius, spacing } from '@/src/theme';
 
 /** Пауза после срабатывания: иначе камера шлёт один и тот же код десятки раз в секунду. */
@@ -47,6 +48,7 @@ export default function AdminScan() {
   const orders = useOrdersStore((s) => s.orders);
   const redeemEntry = useOrdersStore((s) => s.redeemEntry);
   const redeemLine = useOrdersStore((s) => s.redeemLine);
+  const bans = useStaffStore((s) => s.bans);
 
   const [eventId, setEventId] = useState<string | null>(null);
   const [scan, setScan] = useState<ScanSummary | null>(null);
@@ -159,6 +161,10 @@ export default function AdminScan() {
   }
 
   const orderEvent = scan?.order ? events.find((e) => e.id === scan.order?.eventId) : undefined;
+
+  // Владелец кода определяется по номеру карты внутри QR
+  const holder = scan?.order?.qrPayload.split('|')[2];
+  const ban = holder ? bans.find((b) => b.contact === holder && !b.liftedAt) : undefined;
   const barPending = scan?.bar.filter((b) => b.left > 0) ?? [];
 
   return (
@@ -217,6 +223,22 @@ export default function AdminScan() {
               {VERDICT_HINT[scan.verdict]}
             </Text>
 
+            {/* Отказ показывается раньше всех действий и крупно: когда
+                на входе очередь, эту информацию нельзя прятать */}
+            {ban && (
+              <View style={styles.banBlock}>
+                <Ionicons name="hand-left" size={20} color={colors.danger} />
+                <View style={styles.flex}>
+                  <Text variant="bodyStrong" tone="danger">
+                    Отказ во входе
+                  </Text>
+                  <Text variant="caption" tone="muted">
+                    {ban.reason}
+                  </Text>
+                </View>
+              </View>
+            )}
+
             {/* На какую вечеринку оформлен заказ — важно при вердикте wrong-event */}
             {scan.order && (
               <Text variant="caption" tone={scan.verdict === 'wrong-event' ? 'danger' : 'faint'}>
@@ -228,7 +250,7 @@ export default function AdminScan() {
             )}
 
             {/* Действия доступны, только когда код подходит к выбранной вечеринке */}
-            {scan.verdict === 'ok' && (
+            {scan.verdict === 'ok' && !ban && (
               <>
                 {scan.entry.total > 0 && (
                   <View style={styles.block}>
@@ -391,6 +413,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
+  },
+  banBlock: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: colors.surfaceElevated,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.danger,
+    padding: spacing.lg,
   },
   block: {
     gap: spacing.md,
