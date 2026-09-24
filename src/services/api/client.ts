@@ -1,6 +1,8 @@
 import Constants from 'expo-constants';
 import * as SecureStore from 'expo-secure-store';
 
+import { clearCache } from './cache';
+
 const TOKEN_KEY = 'apprave.token';
 
 /**
@@ -25,6 +27,32 @@ export const API_URL = resolveBaseUrl();
 
 let token: string | null = null;
 
+/**
+ * Была ли связь на последнем запросе.
+ *
+ * Экраны показывают по нему плашку «нет связи»: пустой список без
+ * объяснения выглядит как потерянные билеты. Отдельный опрос сервера
+ * ради этого не нужен — ответ уже известен из последнего обращения.
+ */
+let online = true;
+const watchers = new Set<() => void>();
+
+function setOnline(next: boolean) {
+  if (online === next) return;
+  online = next;
+  for (const notify of watchers) notify();
+}
+
+export function isOffline(): boolean {
+  return !online;
+}
+
+/** Подписка для экранов: плашка «нет связи» должна появляться сама. */
+export function watchConnection(notify: () => void): () => void {
+  watchers.add(notify);
+  return () => watchers.delete(notify);
+}
+
 export async function loadToken(): Promise<string | null> {
   if (token) return token;
   try {
@@ -43,6 +71,10 @@ export async function setToken(next: string | null) {
   } catch {
     // Токен не сохранился — пользователь войдёт заново при перезапуске
   }
+
+  // Вышли — стираем офлайн-копии: следующий владелец телефона
+  // не должен увидеть чужие билеты
+  if (!next) await clearCache();
 }
 
 /** Ошибка от API с кодом, по которому экран может отличить причину. */
@@ -102,10 +134,13 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
       signal: controller.signal,
     });
   } catch {
+    setOnline(false);
     throw new NetworkError();
   } finally {
     clearTimeout(timer);
   }
+
+  setOnline(true);
 
   const text = await response.text();
   const payload = text ? safeParse(text) : null;

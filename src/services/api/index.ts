@@ -7,6 +7,7 @@ import type {
   EventsService,
   User,
 } from '@/src/services/types';
+import { cached } from './cache';
 import { ApiError, request, setToken } from './client';
 import {
   mapBarItem,
@@ -61,8 +62,10 @@ export const apiAuthService: AuthService = {
 
 export const apiEventsService: EventsService = {
   async list() {
-    const events = await request<ApiEvent[]>('/events');
-    return events.map(mapEvent);
+    return cached('events', async () => {
+      const events = await request<ApiEvent[]>('/events');
+      return events.map(mapEvent);
+    });
   },
 
   async byId(id) {
@@ -77,8 +80,10 @@ export const apiEventsService: EventsService = {
 
 export const apiBarService: BarService = {
   async menu() {
-    const items = await request<ApiBarItem[]>('/bar/menu');
-    return items.map(mapBarItem);
+    return cached('bar-menu', async () => {
+      const items = await request<ApiBarItem[]>('/bar/menu');
+      return items.map(mapBarItem);
+    });
   },
 };
 
@@ -94,5 +99,13 @@ export async function fetchMe(): Promise<User> {
   return mapUser(await request<ApiUser>('/auth/me'));
 }
 
-export { API_URL, ApiError, NetworkError, ping, setToken } from './client';
+export {
+  API_URL,
+  ApiError,
+  isOffline,
+  NetworkError,
+  ping,
+  setToken,
+  watchConnection,
+} from './client';
 export type { ClubEvent };

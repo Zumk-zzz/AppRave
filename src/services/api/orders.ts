@@ -1,4 +1,5 @@
 import type { CheckoutItem, Order, OrdersService } from '@/src/services/types';
+import { cached } from './cache';
 import { ApiError, request } from './client';
 import { mapOrder, type ApiOrder } from './mappers';
 
@@ -21,8 +22,12 @@ interface CreateBody {
 
 export const apiOrdersService: OrdersService = {
   async mine() {
-    const orders = await request<ApiOrder[]>('/orders');
-    return orders.map(mapOrder);
+    // Единственное место, где офлайн-копия по-настоящему нужна:
+    // в клубе плохая связь, а гостю показывать QR на входе
+    return cached('orders', async () => {
+      const orders = await request<ApiOrder[]>('/orders');
+      return orders.map(mapOrder);
+    });
   },
 
   async forStaff(eventId) {

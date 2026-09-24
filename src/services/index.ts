@@ -31,7 +31,16 @@ export const inventoryService = useApi ? apiInventoryService : mockInventoryServ
 export const adminService = useApi ? apiAdminService : mockAdminService;
 export const staffService = useApi ? apiStaffService : mockStaffService;
 
-export { API_URL, ApiError, fetchMe, NetworkError, ping, setToken } from './api';
+export {
+  API_URL,
+  ApiError,
+  fetchMe,
+  isOffline,
+  NetworkError,
+  ping,
+  setToken,
+  watchConnection,
+} from './api';
 export { ADMIN_PHONE, DEMO_CODE, STAFF_PHONES } from './auth.mock';
 export { currentActor, setActor } from './session';
 export { getDataSource, setDataSource, type DataSource } from './source';

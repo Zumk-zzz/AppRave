@@ -3,7 +3,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { StyleSheet, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 
-import { Badge, Card, Screen, SectionHeader, Text } from '@/src/components';
+import { Badge, Card, OfflineNotice, Screen, SectionHeader, Text } from '@/src/components';
 import { formatPrice, formatShortDate } from '@/src/lib/format';
 import {
   nextTier,
@@ -38,6 +38,8 @@ export default function CardTab() {
   return (
     <Screen scroll contentContainerStyle={styles.scrollBody}>
       <SectionHeader title="Клубная карта" kicker="Лояльность" />
+
+      <OfflineNotice hint="Карта и номер работают без сети" />
 
       {/* Карта */}
       <View style={styles.card}>

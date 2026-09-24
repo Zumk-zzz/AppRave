@@ -2,9 +2,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { Badge, Button, Card, Screen, Text } from '@/src/components';
+import { Badge, Button, Card, OfflineNotice, Screen, Text } from '@/src/components';
 import { formatEventDate, formatPrice, pluralWithCount } from '@/src/lib/format';
 import { ORDER_STATUS_LABEL, ORDER_STATUS_TONE } from '@/src/lib/order-actions';
+import { canCancel } from '@/src/lib/refund';
+import { useCancelOrder } from '@/src/features/orders/useCancelOrder';
 import type { Order } from '@/src/services';
 import { useOrdersStore } from '@/src/store/orders';
 import { colors, radius, spacing } from '@/src/theme';
@@ -12,6 +14,7 @@ import { colors, radius, spacing } from '@/src/theme';
 export default function OrdersScreen() {
   const router = useRouter();
   const orders = useOrdersStore((s) => s.orders);
+  const { ask, cancelling } = useCancelOrder();
 
   return (
     <Screen scroll>
@@ -28,6 +31,8 @@ export default function OrdersScreen() {
         <Text variant="title">Мои заказы</Text>
       </View>
 
+      <OfflineNotice hint="Билеты сохранены — QR на входе покажется" />
+
       {orders.length === 0 ? (
         <View style={styles.empty}>
           <Ionicons name="ticket-outline" size={40} color={colors.textFaint} />
@@ -42,7 +47,9 @@ export default function OrdersScreen() {
             <OrderCard
               key={order.id}
               order={order}
+              busy={cancelling === order.id}
               onPress={() => router.push({ pathname: '/ticket/[id]', params: { id: order.id } })}
+              onCancel={() => ask(order)}
             />
           ))}
         </View>
@@ -51,9 +58,20 @@ export default function OrdersScreen() {
   );
 }
 
-function OrderCard({ order, onPress }: { order: Order; onPress: () => void }) {
+function OrderCard({
+  order,
+  busy,
+  onPress,
+  onCancel,
+}: {
+  order: Order;
+  busy: boolean;
+  onPress: () => void;
+  onCancel: () => void;
+}) {
   const totalItems = order.lines.reduce((sum, l) => sum + l.qty, 0);
   const isPast = order.eventDate ? new Date(order.eventDate).getTime() < Date.now() : false;
+  const cancellable = canCancel(order).allowed;
 
   return (
     <Card onPress={onPress} style={styles.card}>
@@ -82,6 +100,18 @@ function OrderCard({ order, onPress }: { order: Order; onPress: () => void }) {
         </Text>
         <Text variant="bodyStrong">{formatPrice(order.total)}</Text>
       </View>
+
+      {/* Отмена прямо в списке: раньше до неё нужно было догадаться
+          открыть билет, и гости её просто не находили */}
+      {cancellable && (
+        <Button
+          label={busy ? 'Отменяем…' : 'Отменить заказ'}
+          variant="ghost"
+          fullWidth
+          loading={busy}
+          onPress={onCancel}
+        />
+      )}
     </Card>
   );
 }

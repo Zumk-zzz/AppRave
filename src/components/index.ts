@@ -1,4 +1,5 @@
 export { Badge, type BadgeProps, type BadgeTone } from './Badge';
+export { OfflineNotice, useOffline } from './OfflineNotice';
 export { Button, type ButtonProps, type ButtonVariant } from './Button';
 export { Card, type CardProps } from './Card';
 export { Chip, ChipRow, type ChipProps } from './Chip';

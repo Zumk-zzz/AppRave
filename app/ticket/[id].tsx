@@ -4,9 +4,10 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 
-import { Badge, Button, Card, Screen, Text } from '@/src/components';
+import { Badge, Button, Card, OfflineNotice, Screen, Text } from '@/src/components';
 import { formatEventDate, formatPrice, pluralWithCount } from '@/src/lib/format';
 import { canCancel, CANCEL_BLOCK_TEXT, hoursUntil, REFUND_CUTOFF_HOURS } from '@/src/lib/refund';
+import { useCancelOrder } from '@/src/features/orders/useCancelOrder';
 import {
   isLineCancellable,
   ORDER_STATUS_LABEL,
@@ -21,8 +22,8 @@ export default function TicketScreen() {
   const router = useRouter();
 
   const order = useOrdersStore((s) => s.orders.find((o) => o.id === id));
-  const cancel = useOrdersStore((s) => s.cancel);
   const cancelLine = useOrdersStore((s) => s.cancelLine);
+  const { ask, cancelling } = useCancelOrder();
 
   if (!order) {
     return (
@@ -68,29 +69,7 @@ export default function TicketScreen() {
   const cancelCheck = canCancel(order);
   const hoursLeft = order.eventDate ? Math.floor(hoursUntil(order.eventDate)) : null;
 
-  const handleCancel = () => {
-    Alert.alert(
-      'Отменить заказ?',
-      `Билеты вернутся в продажу, напитки — на склад. Возврат придёт на карту в течение трёх дней.`,
-      [
-        { text: 'Оставить', style: 'cancel' },
-        {
-          text: 'Отменить заказ',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              // Билеты и напитки возвращает сервис заказа одной операцией:
-              // на сервере это транзакция, в моках — тот же порядок шагов
-              await cancel(order.id);
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            } catch (e) {
-              reportFailure(e);
-            }
-          },
-        },
-      ],
-    );
-  };
+  const handleCancel = () => ask(order);
 
   return (
     <Screen scroll>
@@ -120,6 +99,8 @@ export default function TicketScreen() {
           </Text>
         )}
       </View>
+
+      <OfflineNotice hint="Код действителен — на входе его проверят по базе клуба" />
 
       {/* QR на белом: сканеры на входе плохо читают код на тёмном фоне */}
       <View style={styles.qrCard}>
@@ -195,7 +176,13 @@ export default function TicketScreen() {
         <View style={styles.cancelBlock}>
           {cancelCheck.allowed ? (
             <>
-              <Button label="Отменить заказ" variant="outline" fullWidth onPress={handleCancel} />
+              <Button
+                label={cancelling === order.id ? 'Отменяем…' : 'Отменить заказ'}
+                variant="outline"
+                fullWidth
+                loading={cancelling === order.id}
+                onPress={handleCancel}
+              />
               <Text variant="caption" tone="faint" style={styles.cancelNote}>
                 Бесплатно до {REFUND_CUTOFF_HOURS} часов до начала
                 {hoursLeft !== null ? ` · осталось ${hoursLeft} ч` : ''}
