@@ -28,7 +28,9 @@ export function isLineClosed(line: OrderLine): boolean {
  * как состоявшийся.
  */
 export function deriveStatus(order: Order): OrderStatus {
-  if (order.status === 'cancelled') return 'cancelled';
+  // Состояния, которые из строк не выводятся: заказ ещё не оплачен,
+  // резерв сгорел или деньги вернули. Их назначает не выдача, а оплата.
+  if (order.status !== 'paid' && order.status !== 'used') return order.status;
 
   // Стол не выдают — он либо есть, либо нет, и на закрытие заказа не влияет
   const relevant = order.lines.filter((l) => l.kind !== 'table');

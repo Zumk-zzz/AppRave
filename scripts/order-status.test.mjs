@@ -115,5 +115,18 @@ check(
   deriveStatus(order([ticket({ redeemed: 1 })])) === 'paid',
 );
 
+console.log('\n=== Состояния оплаты ===');
+// Эти статусы назначает оплата, а не выдача: вывести их из строк нельзя,
+// и попытка вывести превратила бы неоплаченный заказ в оплаченный
+check('резерв остаётся резервом', deriveStatus(order([ticket()], 'pending')) === 'pending');
+check(
+  'сгоревший резерв не оживает',
+  deriveStatus(order([ticket({ redeemed: 2 })], 'expired')) === 'expired',
+);
+check(
+  'отменённый заказ не становится использованным',
+  deriveStatus(order([ticket({ redeemed: 2 })], 'cancelled')) === 'cancelled',
+);
+
 console.log(`\n${failures === 0 ? 'ВСЕ ПРОВЕРКИ ПРОШЛИ' : `ПРОВАЛЕНО: ${failures}`}\n`);
 process.exit(failures === 0 ? 0 : 1);

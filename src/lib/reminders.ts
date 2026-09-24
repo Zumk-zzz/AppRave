@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 
 import type { Order } from '@/src/services';
@@ -85,4 +86,51 @@ export async function cancelReminder(id: string | undefined) {
   } catch {
     // Уже сработало или снято — ничего страшного.
   }
+}
+
+/**
+ * Связь «заказ → запланированное уведомление».
+ *
+ * Хранится на телефоне отдельно от заказа: уведомление поставлено этим
+ * устройством, и на сервере, который отдаёт заказ и другим устройствам
+ * того же человека, ему места нет.
+ */
+const LINK_KEY = 'apprave.reminders';
+
+type Links = Record<string, string>;
+
+async function readLinks(): Promise<Links> {
+  try {
+    const raw = await AsyncStorage.getItem(LINK_KEY);
+    return raw ? (JSON.parse(raw) as Links) : {};
+  } catch {
+    return {};
+  }
+}
+
+async function writeLinks(links: Links): Promise<void> {
+  try {
+    await AsyncStorage.setItem(LINK_KEY, JSON.stringify(links));
+  } catch {
+    // Напоминание останется висеть до своего срока — не критично
+  }
+}
+
+/** Ставит напоминание по заказу и запоминает его, чтобы потом снять. */
+export async function rememberReminder(order: Order): Promise<void> {
+  const id = await scheduleReminder(order);
+  if (!id) return;
+
+  await writeLinks({ ...(await readLinks()), [order.id]: id });
+}
+
+/** Снимает напоминание по отменённому заказу. */
+export async function forgetReminder(orderId: string): Promise<void> {
+  const links = await readLinks();
+  const id = links[orderId];
+  if (!id) return;
+
+  await cancelReminder(id);
+  delete links[orderId];
+  await writeLinks(links);
 }

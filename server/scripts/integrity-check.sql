@@ -1,6 +1,6 @@
--- Проверка двух гарантий целостности, на которых держится вся защита от
--- «покупок просто так». Оба сценария имитируют гонку двух одновременных
--- запросов за последним свободным ресурсом.
+-- Проверка гарантий целостности, на которых держится вся защита от
+-- «покупок просто так». Сценарии имитируют гонку двух одновременных
+-- запросов за последним свободным ресурсом и попытку выдать лишнее.
 
 \set ON_ERROR_STOP off
 
@@ -65,5 +65,26 @@ UPDATE table_bookings SET status = 'cancelled' WHERE id = 'b1';
 INSERT INTO table_bookings (id, order_id, event_id, table_id, guests, status)
 VALUES ('b3', 'o2', 'e1', 'tb1', '{}', 'pending')
 RETURNING id, status;
+
+\echo ''
+\echo '=== 4. Выдать больше купленного нельзя ==='
+
+INSERT INTO order_lines (id, order_id, kind, ticket_type_id, title, price_kopecks,
+                         qty, redeemed, cancelled_qty)
+VALUES ('l1', 'o1', 'ticket', 'tt1', 'Last one', 150000, 2, 0, 0);
+
+\echo '-- выдать 3 из 2 (должно упасть):'
+SAVEPOINT before_over;
+UPDATE order_lines SET redeemed = 3 WHERE id = 'l1';
+ROLLBACK TO SAVEPOINT before_over;
+
+\echo '-- выдать 1 и отменить 2 из 2 (должно упасть):'
+SAVEPOINT before_mix;
+UPDATE order_lines SET redeemed = 1, cancelled_qty = 2 WHERE id = 'l1';
+ROLLBACK TO SAVEPOINT before_mix;
+
+\echo '-- выдать 1 и отменить 1 из 2 (должно пройти):'
+UPDATE order_lines SET redeemed = 1, cancelled_qty = 1 WHERE id = 'l1'
+RETURNING qty, redeemed, cancelled_qty;
 
 ROLLBACK;

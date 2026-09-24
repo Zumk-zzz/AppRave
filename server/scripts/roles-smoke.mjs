@@ -166,15 +166,17 @@ const afterLift = await api(`/staff/scan/${order2.body.number}/admit`, { method:
 check('после снятия отказа проход открыт', afterLift.status === 200, `статус ${afterLift.status}`);
 
 console.log('\n=== Списки ===');
-const gl = await api(`/staff/guest-list/${ev.id}`, { token: doorman.token });
-check('список гостей отдаётся', gl.status === 200 && gl.body.length > 0, `${gl.body?.length} записей`);
-check('в списке есть имя и контакт', !!gl.body[0]?.name && !!gl.body[0]?.contact);
+const gl = await api(`/staff/orders?eventId=${ev.id}`, { token: doorman.token });
+check('список заказов отдаётся фейсеру', gl.status === 200 && gl.body.length > 0, `${gl.body?.length} записей`);
+check('в списке есть имя и контакт', !!gl.body[0]?.guest?.name && !!gl.body[0]?.guest?.contact);
+check('в списке есть состав заказа', Array.isArray(gl.body[0]?.lines) && !!gl.body[0].lines[0]?.id);
 
-const bq = await api(`/staff/bar-queue/${ev.id}`, { token: bartender.token });
-check('очередь бара отдаётся', bq.status === 200, `${bq.body?.length} заказов`);
+const bq = await api(`/staff/orders?eventId=${ev.id}`, { token: bartender.token });
+check('список заказов отдаётся бармену', bq.status === 200, `${bq.body?.length} заказов`);
+check('бармен не видит контакт гостя', bq.body[0]?.guest?.contact === null, JSON.stringify(bq.body[0]?.guest));
 
-const glForBartender = await api(`/staff/guest-list/${ev.id}`, { token: bartender.token });
-check('бармену список гостей закрыт', glForBartender.status === 403, `статус ${glForBartender.status}`);
+const forGuest = await api('/staff/orders', { token: guest.token });
+check('гостю чужие заказы закрыты', forGuest.status === 403, `статус ${forGuest.status}`);
 
 console.log('\n=== Защита от самоотзыва ===');
 const selfRevoke = await api(`/staff/members/${admin.user.id}`, { method: 'DELETE', token: admin.token });

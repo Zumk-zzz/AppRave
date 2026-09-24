@@ -7,7 +7,8 @@ import { db } from '../db.js';
 import { badRequest, conflict, forbidden, notFound } from '../lib/http-error.js';
 import { parseContact } from '../lib/contact.js';
 import { allocateMemberNo } from '../lib/ids.js';
-import { ASSIGNABLE_ROLES, can, type UserRole } from '../lib/permissions.js';
+import { ASSIGNABLE_ROLES, can, canAny, type UserRole } from '../lib/permissions.js';
+import { leftOf, settleStatus, toLineDtos, toOrderDto } from './orders.js';
 
 /** Контакт сотрудника: телефон или почта, роль выдаётся аккаунту. */
 const contactSchema = z.string().min(3);
@@ -86,6 +87,9 @@ export async function staffRoutes(app: FastifyInstance) {
 
       if (count > 0) {
         await tx.order.update({ where: { id: order.id }, data: { usedAt: new Date() } });
+        // Заказ закрывается, когда выдавать больше нечего: пересчёт
+        // держим в той же транзакции, что и саму выдачу
+        await settleStatus(tx, order.id);
       }
 
       return count;
@@ -120,9 +124,12 @@ export async function staffRoutes(app: FastifyInstance) {
     if (left <= 0) throw conflict('По этой позиции уже всё выдано', 'nothing_to_issue');
     if (qty > left) throw badRequest(`Осталось выдать только ${left}`, 'too_many');
 
-    await db.orderLine.update({
-      where: { id: line.id },
-      data: { redeemed: line.redeemed + qty },
+    await db.$transaction(async (tx) => {
+      await tx.orderLine.update({
+        where: { id: line.id },
+        data: { redeemed: line.redeemed + qty },
+      });
+      await settleStatus(tx, order.id);
     });
 
     await logAction(auth.sub, 'bar_issued', {
@@ -340,59 +347,43 @@ export async function staffRoutes(app: FastifyInstance) {
   // --- Списки на сегодня ---
 
   /**
-   * Гости на событие: кого ждём на входе.
-   * Нужен, когда у гостя сел телефон и код показать нечем.
+   * Заказы на событие целиком: список гостей на входе и очередь бара —
+   * это одни и те же заказы, просто показанные с разных сторон.
+   *
+   * Отдаём полную модель заказа, ту же, что видит гость в своём билете.
+   * Два урезанных ответа под два экрана пришлось бы править парой при
+   * каждом изменении состава заказа, а расходиться они начали бы сразу.
    */
-  app.get('/staff/guest-list/:eventId', async (req) => {
-    requirePermission(req, 'scan:entry');
-    const { eventId } = z.object({ eventId: z.string() }).parse(req.params);
+  app.get('/staff/orders', async (req) => {
+    const auth = requireUser(req);
+    if (!canAny(auth.role, ['scan:entry', 'scan:bar', 'orders:read'])) {
+      throw forbidden('Список заказов недоступен для вашей роли');
+    }
+
+    const { eventId } = z.object({ eventId: z.string().optional() }).parse(req.query);
 
     const orders = await db.order.findMany({
-      where: { eventId, status: { in: ['paid', 'used'] } },
-      include: { lines: true, user: true, bookings: { include: { table: true } } },
-      orderBy: { createdAt: 'asc' },
+      where: {
+        ...(eventId ? { eventId } : {}),
+        status: { in: ['paid', 'used'] },
+      },
+      include: { lines: true, event: true, bookings: true, user: true },
+      orderBy: { createdAt: 'desc' },
+      take: 500,
     });
 
-    return orders.map((o) => {
-      const tickets = o.lines.filter((l) => l.kind === 'ticket');
-      return {
-        number: o.number,
+    // Контакт гостя видит тот, кому он нужен по работе: фейсер вносит
+    // по нему отказ, управляющий разбирает спорную ситуацию. Бармену
+    // для выдачи напитка достаточно имени.
+    const seesContact = canAny(auth.role, ['scan:entry', 'orders:read']);
+
+    return orders.map((o) => ({
+      ...toOrderDto(o),
+      guest: {
         name: o.user.name,
-        contact: o.user.phone ?? o.user.email,
-        tickets: tickets.reduce((n, l) => n + l.qty, 0),
-        admitted: tickets.reduce((n, l) => n + l.redeemed, 0),
-        table: o.bookings[0]?.table.label ?? null,
-        guests: o.bookings.flatMap((b) => b.guests),
-      };
-    });
-  });
-
-  /** Предзаказы бара, которые ещё не выданы: бармен готовит заранее. */
-  app.get('/staff/bar-queue/:eventId', async (req) => {
-    requirePermission(req, 'scan:bar');
-    const { eventId } = z.object({ eventId: z.string() }).parse(req.params);
-
-    const orders = await db.order.findMany({
-      where: { eventId, status: { in: ['paid', 'used'] } },
-      include: { lines: true, user: true, bookings: { include: { table: true } } },
-      orderBy: { createdAt: 'asc' },
-    });
-
-    return orders
-      .map((o) => ({
-        number: o.number,
-        name: o.user.name,
-        table: o.bookings[0]?.table.label ?? null,
-        items: o.lines
-          .filter((l) => l.kind === 'bar' && l.qty - l.redeemed - l.cancelledQty > 0)
-          .map((l) => ({
-            lineId: l.id,
-            title: l.title,
-            left: l.qty - l.redeemed - l.cancelledQty,
-            qty: l.qty,
-          })),
-      }))
-      .filter((o) => o.items.length > 0);
+        contact: seesContact ? (o.user.phone ?? o.user.email) : null,
+      },
+    }));
   });
 }
 
@@ -401,7 +392,7 @@ type OrderWithAll = Prisma.OrderGetPayload<{
 }>;
 
 function toScanDto(order: OrderWithAll) {
-  const left = (l: (typeof order.lines)[number]) => l.qty - l.redeemed - l.cancelledQty;
+  const left = leftOf;
 
   return {
     number: order.number,
@@ -420,6 +411,14 @@ function toScanDto(order: OrderWithAll) {
     table: order.bookings[0]
       ? { guests: order.bookings[0].guests }
       : null,
+    // Полный состав — чтобы приложение собрало ту же модель заказа,
+    // что и в личном кабинете, и не заводило вторую ради сканера
+    id: order.id,
+    createdAt: order.createdAt.toISOString(),
+    totalKopecks: order.totalKopecks,
+    pointsEarned: order.pointsEarned,
+    qrPayload: `APPRAVE|${order.number}|${order.userId}|${order.eventId ?? '-'}`,
+    lines: toLineDtos(order),
   };
 }
 

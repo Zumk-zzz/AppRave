@@ -7,7 +7,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { Badge, Button, Card, Screen, Stepper, Text } from '@/src/components';
 import { formatEventDate, formatPrice, pluralWithCount } from '@/src/lib/format';
 import { pointsForPurchase, tierForPoints } from '@/src/lib/loyalty';
-import { adminService, eventsService, inventoryService, type ClubEvent } from '@/src/services';
+import { eventsService, type ClubEvent } from '@/src/services';
 import { useAuthStore } from '@/src/store/auth';
 import { selectTotal, useCartStore, type CartItem } from '@/src/store/cart';
 import { useOrdersStore } from '@/src/store/orders';
@@ -28,6 +28,7 @@ export default function CheckoutScreen() {
 
   const [events, setEvents] = useState<ClubEvent[]>([]);
   const [paying, setPaying] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     void eventsService.list().then(setEvents);
@@ -49,30 +50,32 @@ export default function CheckoutScreen() {
     if (!user || items.length === 0 || paying) return;
 
     setPaying(true);
+    setError(null);
 
-    // Имитация обращения к платёжному шлюзу. Настоящий эквайринг
-    // появится на этапе dev build - в Expo Go нативный SDK не поднять.
-    await new Promise((resolve) => setTimeout(resolve, 1600));
+    try {
+      const created = await checkout(items, events, user);
+      if (created.length === 0) throw new Error('Заказ не создан');
 
-    const created = await checkout(items, events, user.memberNo, user.tier);
+      const earned = created.reduce((sum, o) => sum + o.pointsEarned, 0);
+      const nextPoints = user.points + earned;
 
-    // Склад и остатки билетов приводятся в соответствие сразу после оплаты.
-    // Иначе инвентаризация показывала бы наличие товара, который уже продан.
-    await applyStockAndTickets(items, created[0]?.id);
+      // Уровень пересчитывается тут же: иначе повышение заметят только
+      // после перезапуска, и начисление пойдёт по старой ставке.
+      patchUser({ points: nextPoints, tier: tierForPoints(nextPoints) });
+      clearCart();
 
-    const earned = created.reduce((sum, o) => sum + o.pointsEarned, 0);
-    const nextPoints = user.points + earned;
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-    // Уровень пересчитывается тут же: иначе повышение заметят только
-    // после перезапуска, и начисление пойдёт по старой ставке.
-    patchUser({ points: nextPoints, tier: tierForPoints(nextPoints) });
-    clearCart();
-
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setPaying(false);
-
-    // replace, а не push: возвращаться на пустую корзину незачем
-    router.replace({ pathname: '/ticket/[id]', params: { id: created[0].id } });
+      // replace, а не push: возвращаться на пустую корзину незачем
+      router.replace({ pathname: '/ticket/[id]', params: { id: created[0].id } });
+    } catch (e) {
+      // Билеты могли разобрать, пока гость собирал корзину. Корзину не
+      // чистим: пусть уберёт лишнее сам, а не собирает заново.
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      setError(e instanceof Error ? e.message : 'Не удалось оформить заказ');
+    } finally {
+      setPaying(false);
+    }
   };
 
   if (items.length === 0) {
@@ -117,6 +120,11 @@ export default function CheckoutScreen() {
             onPress={handlePay}
             style={styles.payButton}
           />
+          {error && (
+            <Text variant="caption" tone="danger" style={styles.demo}>
+              {error}
+            </Text>
+          )}
           <Text variant="caption" tone="faint" style={styles.demo}>
             Демо-режим — деньги не списываются
           </Text>
@@ -212,29 +220,6 @@ export default function CheckoutScreen() {
       )}
     </Screen>
   );
-}
-
-/**
- * Списывает проданные напитки со склада и уменьшает остаток билетов.
- *
- * Столы не трогаем: депозит — это не товар со склада, а занятость стола
- * считается на дату и в каталоге не хранится.
- */
-async function applyStockAndTickets(items: CartItem[], orderId?: string) {
-  for (const line of items) {
-    if (line.kind === 'bar') {
-      await inventoryService.apply({
-        barItemId: line.refId,
-        kind: 'sale',
-        delta: -line.qty,
-        orderId,
-      });
-    }
-
-    if (line.kind === 'ticket' && line.eventId) {
-      await adminService.consumeTickets(line.eventId, line.refId, line.qty);
-    }
-  }
 }
 
 function Header({ onBack, title }: { onBack: () => void; title: string }) {

@@ -73,8 +73,16 @@ const events = await api('/events');
 check('афиша отдаётся', events.status === 200 && events.body.length > 0, `${events.body?.length} событий`);
 
 const withStock = events.body.find((e) => e.tickets.some((t) => t.available > 0));
-const soldOutType = events.body.flatMap((e) => e.tickets).find((t) => t.available === 0);
-check('распроданный тип виден как available=0', !!soldOutType, soldOutType?.name);
+
+// Проверяем границы остатка, а не наличие распроданного типа: предыдущий
+// прогон мог вернуть билеты в продажу отменой, и тогда распроданных типов
+// просто нет. Что остаток обнуляется, проверяет раздел про гонку ниже.
+const allTickets = events.body.flatMap((e) => e.tickets);
+check(
+  'остаток билетов не уходит в минус',
+  allTickets.every((t) => t.available >= 0 && t.available <= t.quantity),
+  `${allTickets.length} типов`,
+);
 
 const noAuthTables = await api(`/events/${withStock.id}/tables`);
 check('схема зала отдаётся', noAuthTables.status === 200 && noAuthTables.body.length === 12);
@@ -193,6 +201,39 @@ check('повторный вебхук идемпотентен', hookAgain.body
 
 const me = await api('/auth/me', { token: guest.token });
 check('баллы начислены', me.body?.points > 0, `${me.body?.points}`);
+
+console.log('\n=== Отмена одной позиции ===');
+const partial = await api('/orders', {
+  method: 'POST', token: guest.token, key: uid(),
+  body: { eventId: withStock.id, bar: [{ barItemId: drink.id, qty: 3 }] },
+});
+const partialLine = partial.body.lines.find((l) => l.kind === 'bar');
+check('строка заказа имеет id', !!partialLine?.id);
+check('в строке видно выданное и отменённое', partialLine.redeemed === 0 && partialLine.cancelledQty === 0);
+
+const cancelLine = await api(`/orders/${partial.body.id}/lines/${partialLine.id}/cancel`, {
+  method: 'POST', token: guest.token, body: { qty: 1 },
+});
+check('одна порция отменена', cancelLine.status === 200, `статус ${cancelLine.status}`);
+check('отмена учтена в строке',
+  cancelLine.body?.lines.find((l) => l.id === partialLine.id)?.cancelledQty === 1,
+  JSON.stringify(cancelLine.body?.lines.find((l) => l.id === partialLine.id)));
+check('заказ остался живым', cancelLine.body?.status === 'pending', cancelLine.body?.status);
+
+const tooMuch = await api(`/orders/${partial.body.id}/lines/${partialLine.id}/cancel`, {
+  method: 'POST', token: guest.token, body: { qty: 5 },
+});
+check('больше оставшегося отменить нельзя', tooMuch.status === 409, `статус ${tooMuch.status}`);
+
+const restCancel = await api(`/orders/${partial.body.id}/lines/${partialLine.id}/cancel`, {
+  method: 'POST', token: guest.token, body: { qty: 2 },
+});
+check('после отмены всех позиций заказ отменён', restCancel.body?.status === 'cancelled', restCancel.body?.status);
+
+const foreign = await api(`/orders/${partial.body.id}/lines/${partialLine.id}/cancel`, {
+  method: 'POST', token: admin.token, body: { qty: 1 },
+});
+check('чужой заказ не отменить', foreign.status === 404, `статус ${foreign.status}`);
 
 console.log('\n=== Отмена возвращает товар ===');
 const stockBefore = (await api('/bar/menu')).body;

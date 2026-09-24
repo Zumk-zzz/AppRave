@@ -1,21 +1,41 @@
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import * as Haptics from 'expo-haptics';
-import { useMemo, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useMemo, useState } from 'react';
+import { Alert, StyleSheet, View } from 'react-native';
 
 import { Badge, Button, Card, Screen, SectionHeader, Segmented, Sheet, Text } from '@/src/components';
 import { AdminHeader } from '@/src/features/admin/AdminHeader';
 import { formatEventDate, formatPrice, pluralWithCount } from '@/src/lib/format';
+import { ORDER_STATUS_TONE } from '@/src/lib/order-actions';
 import type { Order } from '@/src/services';
 import { useOrdersStore } from '@/src/store/orders';
 import { colors, spacing } from '@/src/theme';
 
 type Filter = 'all' | 'paid' | 'used' | 'cancelled';
 
+/** В сводке продаж заказ «прошёл», а не «использован»: речь о гостях. */
+const STATUS_LABEL: Record<Order['status'], string> = {
+  pending: 'Не оплачен',
+  paid: 'Оплачен',
+  used: 'Прошёл',
+  cancelled: 'Отменён',
+  expired: 'Резерв сгорел',
+};
+
 export default function AdminOrders() {
-  const orders = useOrdersStore((s) => s.orders);
-  const redeemEntry = useOrdersStore((s) => s.redeemEntry);
+  const orders = useOrdersStore((s) => s.staffOrders);
+  const loadStaff = useOrdersStore((s) => s.loadStaff);
+  const admit = useOrdersStore((s) => s.admit);
+
+  // Без аргумента — продажи по всем вечеринкам: администратор смотрит
+  // сводку целиком, а не одну ночь
+  useFocusEffect(
+    useCallback(() => {
+      void loadStaff();
+    }, [loadStaff]),
+  );
 
   const [filter, setFilter] = useState<Filter>('all');
   const [selected, setSelected] = useState<Order | null>(null);
@@ -38,9 +58,16 @@ export default function AdminOrders() {
   );
 
   const handleMarkUsed = (order: Order) => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    redeemEntry(order.id);
-    setSelected(null);
+    void (async () => {
+      try {
+        await admit(order);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        setSelected(null);
+      } catch (e) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        Alert.alert('Не получилось', e instanceof Error ? e.message : 'Попробуйте ещё раз');
+      }
+    })();
   };
 
   return (
@@ -87,25 +114,11 @@ export default function AdminOrders() {
                     {order.eventTitle ?? 'Заказ'}
                   </Text>
                   <Text variant="caption" tone="faint">
-                    {order.id} · {format(new Date(order.createdAt), 'd MMM, HH:mm', { locale: ru })}
+                    {order.number} ·{' '}
+                    {format(new Date(order.createdAt), 'd MMM, HH:mm', { locale: ru })}
                   </Text>
                 </View>
-                <Badge
-                  label={
-                    order.status === 'cancelled'
-                      ? 'Отменён'
-                      : order.status === 'used'
-                        ? 'Прошёл'
-                        : 'Оплачен'
-                  }
-                  tone={
-                    order.status === 'cancelled'
-                      ? 'danger'
-                      : order.status === 'used'
-                        ? 'neutral'
-                        : 'success'
-                  }
-                />
+                <Badge label={STATUS_LABEL[order.status]} tone={ORDER_STATUS_TONE[order.status]} />
               </View>
 
               <View style={styles.cardFoot}>

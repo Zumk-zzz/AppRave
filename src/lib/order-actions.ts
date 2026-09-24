@@ -1,45 +1,33 @@
-import { adminService, inventoryService, type Order, type OrderLine } from '@/src/services';
-import { redeemableOf } from '@/src/store/orders';
+import type { BadgeTone } from '@/src/components';
+import { redeemableOf } from '@/src/lib/order-status';
+import type { Order, OrderLine, OrderStatus } from '@/src/services';
 
 /**
- * Возвращает в продажу единицы одной строки заказа.
+ * Что показать про состояние заказа.
  *
- * Возвращается только то, что ещё не выдано: если гость уже забрал два
- * коктейля из трёх, на склад уходит один. Иначе списания и возвраты
- * разошлись бы с тем, что реально ушло за барную стойку.
+ * Раньше рядом с этим жили функции возврата товара на склад. Теперь
+ * возврат делает сервис заказов — в режиме сервера одной транзакцией,
+ * в моках вручную. Повторять его в экранах нельзя: два места, где
+ * списывается один и тот же товар, однажды разойдутся.
  */
-export async function restoreLine(order: Order, line: OrderLine, units?: number): Promise<number> {
-  const count = Math.min(units ?? redeemableOf(line), redeemableOf(line));
-  if (count <= 0) return 0;
 
-  if (line.kind === 'bar' && line.refId) {
-    await inventoryService.apply({
-      barItemId: line.refId,
-      kind: 'correction',
-      delta: count,
-      comment: `Возврат по заказу ${order.id}`,
-      orderId: order.id,
-    });
-  }
+export const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
+  pending: 'Ожидает оплаты',
+  paid: 'Оплачено',
+  used: 'Использован',
+  cancelled: 'Отменён',
+  expired: 'Резерв сгорел',
+};
 
-  if (line.kind === 'ticket' && line.refId && order.eventId) {
-    // Отрицательное количество — возврат билетов в продажу
-    await adminService.consumeTickets(order.eventId, line.refId, -count);
-  }
-
-  // Стол возвращать некуда: занятость считается по живым броням заказа,
-  // и снимается она сменой статуса самого заказа.
-  return count;
-}
-
-/** Возвращает всё невыданное по заказу целиком. */
-export async function restoreOrder(order: Order): Promise<void> {
-  for (const line of order.lines) {
-    await restoreLine(order, line);
-  }
-}
+export const ORDER_STATUS_TONE: Record<OrderStatus, BadgeTone> = {
+  pending: 'gold',
+  paid: 'success',
+  used: 'neutral',
+  cancelled: 'danger',
+  expired: 'danger',
+};
 
 /** Можно ли ещё отменить эту строку. */
 export function isLineCancellable(order: Order, line: OrderLine): boolean {
-  return order.status !== 'cancelled' && redeemableOf(line) > 0;
+  return (order.status === 'paid' || order.status === 'pending') && redeemableOf(line) > 0;
 }

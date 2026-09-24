@@ -2,7 +2,8 @@ import * as SecureStore from 'expo-secure-store';
 import { create } from 'zustand';
 
 import { can, effectiveRole, type Permission, type UserRole } from '@/src/lib/permissions';
-import { authService, type User } from '@/src/services';
+import { authService, setToken, type User } from '@/src/services';
+import { useOrdersStore } from './orders';
 
 const SESSION_KEY = 'apprave.session';
 const WORK_MODE_KEY = 'apprave.work-mode';
@@ -90,9 +91,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       await SecureStore.deleteItemAsync(SESSION_KEY);
       await SecureStore.deleteItemAsync(WORK_MODE_KEY);
+      // Токен обязательно: иначе следующий человек на этом телефоне
+      // продолжит работать под чужим аккаунтом
+      await setToken(null);
     } catch {
       // Даже если стереть не удалось, из состояния пользователя убираем.
     }
+
+    useOrdersStore.getState().clear();
     set({ user: null, atWork: false, status: 'guest' });
   },
 

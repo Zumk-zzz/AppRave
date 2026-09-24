@@ -1,6 +1,7 @@
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
-import { useMemo, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { Card, Screen, SectionHeader, Segmented, Text } from '@/src/components';
@@ -20,8 +21,15 @@ import { colors, radius, spacing } from '@/src/theme';
 type Period = '7' | '30';
 
 export default function AdminAnalytics() {
-  const orders = useOrdersStore((s) => s.orders);
+  const orders = useOrdersStore((s) => s.staffOrders);
+  const loadStaff = useOrdersStore((s) => s.loadStaff);
   const [period, setPeriod] = useState<Period>('7');
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadStaff();
+    }, [loadStaff]),
+  );
 
   const days = Number(period);
   const buckets = useMemo(() => revenueByDay(orders, days), [orders, days]);

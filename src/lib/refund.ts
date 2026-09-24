@@ -21,7 +21,10 @@ export interface CancelCheck {
 }
 
 export function canCancel(order: Order): CancelCheck {
-  if (order.status !== 'paid') return { allowed: false, reason: 'status' };
+  // Неоплаченный резерв тоже отменяют: гость передумал, не дойдя до оплаты
+  if (order.status !== 'paid' && order.status !== 'pending') {
+    return { allowed: false, reason: 'status' };
+  }
   if (!order.eventDate) return { allowed: true };
 
   const hours = hoursUntil(order.eventDate);

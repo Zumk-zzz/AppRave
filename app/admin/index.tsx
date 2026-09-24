@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useState } from 'react';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
 
 import { Badge, Button, Card, Screen, Text } from '@/src/components';
@@ -19,8 +19,15 @@ export default function AdminDashboard() {
   const events = useCatalogStore((s) => s.events);
   const barMenu = useCatalogStore((s) => s.barMenu);
   const stock = useCatalogStore((s) => s.stock);
-  const orders = useOrdersStore((s) => s.orders);
+  const orders = useOrdersStore((s) => s.staffOrders);
+  const loadStaff = useOrdersStore((s) => s.loadStaff);
   const canManageStaff = useCan('staff:manage');
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadStaff();
+    }, [loadStaff]),
+  );
 
   const [resetting, setResetting] = useState(false);
 

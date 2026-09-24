@@ -71,14 +71,23 @@ export interface EventsService {
 
 /**
  * Статус заказа целиком.
- * `used` выставляется автоматически, когда выданы все строки.
+ *
+ * `pending` — товар зарезервирован, оплата ещё не подтверждена; резерв
+ * сгорает сам и переводит заказ в `expired`. `used` выставляется
+ * автоматически, когда выданы все строки.
  */
-export type OrderStatus = 'paid' | 'used' | 'cancelled';
+export type OrderStatus = 'pending' | 'paid' | 'used' | 'cancelled' | 'expired';
 
 /** Что именно гасится при сканировании. */
 export type RedeemKind = 'ticket' | 'bar';
 
 export interface OrderLine {
+  /**
+   * Идентификатор строки. Выдаётся сервером и нужен, чтобы отменить или
+   * выдать именно эту позицию: порядковый номер в массиве для этого не
+   * годится — состав заказа у сотрудника и у гостя может прийти по-разному.
+   */
+  id: string;
   kind: 'ticket' | 'table' | 'bar';
   /** Идентификатор товара: нужен, чтобы вернуть его на склад при отмене */
   refId: string;
@@ -101,8 +110,10 @@ export interface OrderLine {
 }
 
 export interface Order {
-  /** Человекочитаемый номер, он же показывается на фейс-контроле */
+  /** Внутренний идентификатор: по нему заказ открывается и меняется */
   id: string;
+  /** Человекочитаемый номер вида ORD-8F3A: он в QR и его называют на входе */
+  number: string;
   createdAt: string;
   eventId?: string;
   eventTitle?: string;
@@ -113,8 +124,52 @@ export interface Order {
   status: OrderStatus;
   /** Содержимое QR-кода — то, что сканируют на входе */
   qrPayload: string;
-  /** Идентификатор запланированного напоминания, чтобы снять его при отмене */
-  reminderId?: string;
+  /**
+   * Кто купил. Заполняется только в списках для персонала: гостю в своём
+   * заказе это поле не нужно, а показывать чужие контакты всем подряд —
+   * лишнее. Бармен видит имя, фейсер и управляющий ещё и контакт.
+   */
+  guest?: { name: string; contact?: string };
+}
+
+/** Строка корзины, отправляемая на оформление. */
+export interface CheckoutItem {
+  kind: 'ticket' | 'table' | 'bar';
+  refId: string;
+  title: string;
+  subtitle?: string;
+  price: number;
+  qty: number;
+  eventId?: string;
+  guests?: string[];
+}
+
+/**
+ * Заказы: покупка, отмена и выдача.
+ *
+ * Все изменения заказа проходят здесь, а не в экранах: на сервере за
+ * одним действием стоит транзакция, которая возвращает товар в продажу,
+ * и повторять эту логику на телефоне нельзя — копии разойдутся.
+ */
+export interface OrdersService {
+  /** Мои заказы, новые первыми. */
+  mine(): Promise<Order[]>;
+  /**
+   * Оформить корзину. Возвращает созданные заказы — по одному на вечеринку:
+   * на входе сканируют один код за одну ночь, а не общий чек на все даты.
+   */
+  checkout(items: CheckoutItem[], events: ClubEvent[], user: User): Promise<Order[]>;
+  cancel(orderId: string): Promise<Order>;
+  /** Отменить часть позиции: гость передумал брать один коктейль из трёх. */
+  cancelLine(orderId: string, lineId: string, count: number): Promise<Order>;
+  /** Заказ по номеру из QR. null — такого заказа нет. */
+  byNumber(number: string): Promise<Order | null>;
+  /** Пропустить гостей: гасит все билетные строки разом. */
+  admit(order: Order): Promise<Order>;
+  /** Выдать напитки по одной позиции, возможно частично. */
+  issue(order: Order, lineId: string, count: number): Promise<Order>;
+  /** Заказы смены: список на входе, очередь бара, сводка администратора. */
+  forStaff(eventId?: string): Promise<Order[]>;
 }
 
 export type BarCategory = 'cocktails' | 'shots' | 'champagne' | 'strong' | 'soft';

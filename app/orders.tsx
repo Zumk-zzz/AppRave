@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Badge, Button, Card, Screen, Text } from '@/src/components';
 import { formatEventDate, formatPrice, pluralWithCount } from '@/src/lib/format';
+import { ORDER_STATUS_LABEL, ORDER_STATUS_TONE } from '@/src/lib/order-actions';
 import type { Order } from '@/src/services';
 import { useOrdersStore } from '@/src/store/orders';
 import { colors, radius, spacing } from '@/src/theme';
@@ -68,28 +69,16 @@ function OrderCard({ order, onPress }: { order: Order; onPress: () => void }) {
           )}
         </View>
         <Badge
-          label={
-            order.status === 'cancelled'
-              ? 'Отменён'
-              : order.status === 'used'
-                ? 'Использован'
-                : isPast
-                  ? 'Прошёл'
-                  : 'Оплачено'
-          }
-          tone={
-            order.status === 'cancelled'
-              ? 'danger'
-              : order.status === 'used' || isPast
-                ? 'neutral'
-                : 'success'
-          }
+          // Прошедшая вечеринка по оплаченному заказу — «Прошёл»: билет
+          // действителен, но предъявлять его уже некуда
+          label={order.status === 'paid' && isPast ? 'Прошёл' : ORDER_STATUS_LABEL[order.status]}
+          tone={order.status === 'paid' && isPast ? 'neutral' : ORDER_STATUS_TONE[order.status]}
         />
       </View>
 
       <View style={styles.cardFoot}>
         <Text variant="caption" tone="faint">
-          {order.id} · {pluralWithCount(totalItems, 'позиция', 'позиции', 'позиций')}
+          {order.number} · {pluralWithCount(totalItems, 'позиция', 'позиции', 'позиций')}
         </Text>
         <Text variant="bodyStrong">{formatPrice(order.total)}</Text>
       </View>

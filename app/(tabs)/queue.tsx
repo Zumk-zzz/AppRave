@@ -17,7 +17,8 @@ import { colors, radius, spacing } from '@/src/theme';
  * когда гость уже стоит у стойки.
  */
 export default function QueueTab() {
-  const orders = useOrdersStore((s) => s.orders);
+  const orders = useOrdersStore((s) => s.staffOrders);
+  const loadStaff = useOrdersStore((s) => s.loadStaff);
   const catalogEvents = useCatalogStore((s) => s.events);
 
   const [events, setEvents] = useState<ClubEvent[]>([]);
@@ -33,21 +34,27 @@ export default function QueueTab() {
     }, []),
   );
 
+  // Очередь перечитывается при каждом возвращении на вкладку: гость мог
+  // доплатить напиток, пока бармен смотрел в другой экран
+  useFocusEffect(
+    useCallback(() => {
+      if (eventId) void loadStaff(eventId);
+    }, [eventId, loadStaff]),
+  );
+
   const pending = useMemo(() => {
     return orders
       .filter((o) => o.status !== 'cancelled' && o.eventId === eventId)
       .map((order) => ({
         order,
-        items: order.lines
-          .map((line, index) => ({ line, index }))
-          .filter(({ line }) => line.kind === 'bar' && redeemableOf(line) > 0),
+        items: order.lines.filter((line) => line.kind === 'bar' && redeemableOf(line) > 0),
         table: order.lines.find((l) => l.kind === 'table'),
       }))
       .filter((x) => x.items.length > 0);
   }, [orders, eventId]);
 
   const totalDrinks = pending.reduce(
-    (n, x) => n + x.items.reduce((m, i) => m + redeemableOf(i.line), 0),
+    (n, x) => n + x.items.reduce((m, line) => m + redeemableOf(line), 0),
     0,
   );
 
@@ -91,7 +98,12 @@ export default function QueueTab() {
             <Card key={order.id} style={styles.card}>
               <View style={styles.cardHead}>
                 <View style={styles.flex}>
-                  <Text variant="bodyStrong">{order.id}</Text>
+                  <Text variant="bodyStrong">{order.number}</Text>
+                  {order.guest && (
+                    <Text variant="caption" tone="muted">
+                      {order.guest.name}
+                    </Text>
+                  )}
                   {table && (
                     <Text variant="caption" tone="accent">
                       {table.title}
@@ -100,7 +112,7 @@ export default function QueueTab() {
                 </View>
                 <Badge
                   label={pluralWithCount(
-                    items.reduce((n, i) => n + redeemableOf(i.line), 0),
+                    items.reduce((n, line) => n + redeemableOf(line), 0),
                     'позиция',
                     'позиции',
                     'позиций',
@@ -110,8 +122,8 @@ export default function QueueTab() {
               </View>
 
               <View style={styles.items}>
-                {items.map(({ line, index }) => (
-                  <View key={index} style={styles.itemRow}>
+                {items.map((line) => (
+                  <View key={line.id} style={styles.itemRow}>
                     <Text variant="body" style={styles.flex} numberOfLines={1}>
                       {line.title}
                     </Text>

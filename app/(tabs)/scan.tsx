@@ -2,18 +2,20 @@ import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Haptics from 'expo-haptics';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Alert, StyleSheet, View } from 'react-native';
 
 import { Badge, Button, Card, Chip, ChipRow, Screen, Stepper, Text } from '@/src/components';
 import { formatEventDate, pluralWithCount } from '@/src/lib/format';
 import {
   describe,
   isPositive,
-  judgeScan,
+  judgeOrder,
+  parseQrPayload,
   VERDICT_HINT,
   VERDICT_TITLE,
   type ScanSummary,
 } from '@/src/lib/ticket';
+import type { Order } from '@/src/services';
 import { useCan } from '@/src/store/auth';
 import { useCatalogStore } from '@/src/store/catalog';
 import { useOrdersStore } from '@/src/store/orders';
@@ -45,15 +47,16 @@ export default function AdminScan() {
   const [permission, requestPermission] = useCameraPermissions();
 
   const events = useCatalogStore((s) => s.events);
-  const orders = useOrdersStore((s) => s.orders);
-  const redeemEntry = useOrdersStore((s) => s.redeemEntry);
-  const redeemLine = useOrdersStore((s) => s.redeemLine);
+  const findOrder = useOrdersStore((s) => s.byNumber);
+  const admit = useOrdersStore((s) => s.admit);
+  const issue = useOrdersStore((s) => s.issue);
   const bans = useStaffStore((s) => s.bans);
 
   const [eventId, setEventId] = useState<string | null>(null);
   const [scan, setScan] = useState<ScanSummary | null>(null);
-  /** Сколько штук каждой позиции бара админ собирается выдать прямо сейчас */
-  const [issuing, setIssuing] = useState<Record<number, number>>({});
+  /** Сколько штук каждой позиции бара сотрудник собирается выдать прямо сейчас */
+  const [issuing, setIssuing] = useState<Record<string, number>>({});
+  const [busy, setBusy] = useState(false);
   const locked = useRef(false);
 
   const upcoming = useMemo(
@@ -65,76 +68,96 @@ export default function AdminScan() {
     setEventId((current) => current ?? upcoming[0]?.id ?? null);
   }, [upcoming]);
 
+  /** Показывает вердикт и заранее подставляет «выдать всё, что осталось». */
+  const show = useCallback((result: ScanSummary) => {
+    setScan(result);
+    setIssuing(Object.fromEntries(result.bar.map((b) => [b.lineId, b.left])));
+
+    Haptics.notificationAsync(
+      isPositive(result.verdict)
+        ? Haptics.NotificationFeedbackType.Success
+        : Haptics.NotificationFeedbackType.Error,
+    );
+  }, []);
+
   const handleScan = useCallback(
     ({ data }: { data: string }) => {
       if (locked.current) return;
       locked.current = true;
 
-      const result = judgeScan(data, orders, eventId ?? undefined);
-      setScan(result);
-      // По умолчанию предлагаем выдать всё, что осталось — обычный случай
-      setIssuing(Object.fromEntries(result.bar.map((b) => [b.lineIndex, b.left])));
+      void (async () => {
+        const parsed = parseQrPayload(data);
 
-      Haptics.notificationAsync(
-        isPositive(result.verdict)
-          ? Haptics.NotificationFeedbackType.Success
-          : Haptics.NotificationFeedbackType.Error,
-      );
+        if (!parsed) {
+          show({ verdict: 'foreign', entry: { total: 0, left: 0 }, bar: [] });
+        } else {
+          // Заказ ищется на сервере: чужая покупка на телефоне сотрудника
+          // взяться не может. В автономном режиме поиск идёт по своим.
+          const order = await findOrder(parsed.number).catch(() => null);
+          show(judgeOrder(order, eventId ?? undefined));
+        }
 
-      setTimeout(() => {
-        locked.current = false;
-      }, RESCAN_DELAY);
+        setTimeout(() => {
+          locked.current = false;
+        }, RESCAN_DELAY);
+      })();
     },
-    [orders, eventId],
+    [findOrder, eventId, show],
   );
 
-  /** Пересобирает карточку после погашения, не требуя повторного сканирования. */
-  const refresh = useCallback(
-    (orderId: string) => {
-      const fresh = useOrdersStore.getState().orders.find((o) => o.id === orderId);
-      if (!fresh) return;
+  /** Пересобирает карточку после выдачи, не требуя повторного сканирования. */
+  const refresh = useCallback((fresh: Order) => {
+    const parts = describe(fresh);
+    const hasLeft = parts.entry.left > 0 || parts.bar.some((b) => b.left > 0);
 
-      const parts = describe(fresh);
-      const hasLeft = parts.entry.left > 0 || parts.bar.some((b) => b.left > 0);
+    setScan({ ...parts, order: fresh, verdict: hasLeft ? 'ok' : 'nothing-left' });
+    setIssuing(Object.fromEntries(parts.bar.map((b) => [b.lineId, b.left])));
+  }, []);
 
-      setScan({ ...parts, order: fresh, verdict: hasLeft ? 'ok' : 'nothing-left' });
-      setIssuing(Object.fromEntries(parts.bar.map((b) => [b.lineIndex, b.left])));
-    },
-    [],
-  );
+  /**
+   * Одно действие за раз.
+   *
+   * Отказ сервера показываем словами: «нельзя» без причины на входе
+   * бесполезно, сотруднику нужно знать — заказ отменён или гость уже прошёл.
+   */
+  const run = async (action: () => Promise<Order>) => {
+    if (busy) return;
+    setBusy(true);
 
-  const handleEntry = () => {
-    if (!scan?.order) return;
-    if (redeemEntry(scan.order.id)) {
+    try {
+      refresh(await action());
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      refresh(scan.order.id);
+    } catch (e) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert('Не получилось', e instanceof Error ? e.message : 'Попробуйте ещё раз');
+    } finally {
+      setBusy(false);
     }
   };
 
-  const handleIssue = (lineIndex: number) => {
-    if (!scan?.order) return;
-    const count = issuing[lineIndex] ?? 0;
-    if (count <= 0) return;
-
-    if (redeemLine(scan.order.id, lineIndex, count)) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      refresh(scan.order.id);
-    }
+  const handleEntry = () => {
+    const order = scan?.order;
+    if (!order) return;
+    void run(() => admit(order));
   };
 
   const handleIssueAll = () => {
-    if (!scan?.order) return;
-    let any = false;
+    const order = scan?.order;
+    const positions = scan?.bar ?? [];
+    if (!order) return;
 
-    for (const position of scan.bar) {
-      const count = issuing[position.lineIndex] ?? 0;
-      if (count > 0 && redeemLine(scan.order.id, position.lineIndex, count)) any = true;
-    }
+    void run(async () => {
+      let fresh = order;
 
-    if (any) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      refresh(scan.order.id);
-    }
+      // Позиции выдаются по одной: у сервера операция на строку, и при
+      // обрыве связи выданным числится ровно то, что успели отдать
+      for (const position of positions) {
+        const count = issuing[position.lineId] ?? 0;
+        if (count > 0) fresh = await issue(fresh, position.lineId, count);
+      }
+
+      return fresh;
+    });
   };
 
   if (!permission) {
@@ -216,7 +239,7 @@ export default function AdminScan() {
               <Text variant="subtitle" style={styles.flex}>
                 {VERDICT_TITLE[scan.verdict]}
               </Text>
-              {scan.order && <Badge label={scan.order.id} tone="neutral" />}
+              {scan.order && <Badge label={scan.order.number} tone="neutral" />}
             </View>
 
             <Text variant="caption" tone="muted">
@@ -295,7 +318,7 @@ export default function AdminScan() {
                     </View>
 
                     {scan.bar.map((position) => (
-                      <View key={position.lineIndex} style={styles.barRow}>
+                      <View key={position.lineId} style={styles.barRow}>
                         <View style={styles.flex}>
                           <Text variant="body" numberOfLines={1}>
                             {position.title}
@@ -312,9 +335,9 @@ export default function AdminScan() {
 
                         {position.left > 0 && (
                           <Stepper
-                            value={issuing[position.lineIndex] ?? 0}
+                            value={issuing[position.lineId] ?? 0}
                             onChange={(next) =>
-                              setIssuing((s) => ({ ...s, [position.lineIndex]: next }))
+                              setIssuing((s) => ({ ...s, [position.lineId]: next }))
                             }
                             min={0}
                             max={position.left}

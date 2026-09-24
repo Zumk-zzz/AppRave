@@ -21,8 +21,9 @@ import { colors, fonts, fontSize, radius, spacing } from '@/src/theme';
  * такой гость остаётся на улице, хотя билет оплачен.
  */
 export default function GuestsTab() {
-  const orders = useOrdersStore((s) => s.orders);
-  const redeemEntry = useOrdersStore((s) => s.redeemEntry);
+  const orders = useOrdersStore((s) => s.staffOrders);
+  const loadStaff = useOrdersStore((s) => s.loadStaff);
+  const admit = useOrdersStore((s) => s.admit);
 
   const me = useAuthStore((s) => s.user);
   const myRole = useRole();
@@ -48,6 +49,15 @@ export default function GuestsTab() {
     }, []),
   );
 
+  // Список перечитывается при каждом возвращении на вкладку: на входе
+  // одновременно работают несколько человек, и устаревший список значит
+  // пропущенного дважды гостя
+  useFocusEffect(
+    useCallback(() => {
+      if (eventId) void loadStaff(eventId);
+    }, [eventId, loadStaff]),
+  );
+
   const activeBans = useMemo(() => bans.filter((b) => !b.liftedAt), [bans]);
 
   const rows = useMemo(() => {
@@ -58,9 +68,9 @@ export default function GuestsTab() {
       .map((order) => {
         const tickets = order.lines.filter((l) => l.kind === 'ticket');
         const table = order.lines.find((l) => l.kind === 'table');
-        // Заказ в моке не хранит контакт гостя — используем номер карты
-        // из QR как устойчивый признак человека
-        const contact = order.qrPayload.split('|')[2];
+        // Контакт приходит с сервера. Без него — третье поле QR: номер
+        // карты в автономном режиме, и он тоже опознаёт человека
+        const contact = order.guest?.contact ?? order.qrPayload.split('|')[2];
 
         return {
           order,
@@ -77,7 +87,8 @@ export default function GuestsTab() {
         if (!needle) return true;
         // Ищем и по гостевому списку: на входе называют любое имя из брони
         return (
-          row.order.id.toLowerCase().includes(needle) ||
+          row.order.number.toLowerCase().includes(needle) ||
+          (row.order.guest?.name.toLowerCase().includes(needle) ?? false) ||
           row.guests.some((g) => g.toLowerCase().includes(needle)) ||
           (row.table?.toLowerCase().includes(needle) ?? false)
         );
@@ -121,8 +132,15 @@ export default function GuestsTab() {
         {
           text: 'Пропустить',
           onPress: () => {
-            redeemEntry(order.id);
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            void (async () => {
+              try {
+                await admit(order);
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              } catch (e) {
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+                Alert.alert('Не получилось', e instanceof Error ? e.message : 'Попробуйте ещё раз');
+              }
+            })();
           },
         },
       ],
@@ -231,7 +249,7 @@ export default function GuestsTab() {
             <Card key={row.order.id} style={styles.card}>
               <View style={styles.cardHead}>
                 <View style={styles.flex}>
-                  <Text variant="bodyStrong">{row.order.id}</Text>
+                  <Text variant="bodyStrong">{row.order.number}</Text>
                   {row.table && (
                     <Text variant="caption" tone="accent">
                       {row.table}
@@ -277,7 +295,10 @@ export default function GuestsTab() {
                   variant="ghost"
                   fullWidth
                   onPress={() =>
-                    setBanTarget({ contact: row.contact, name: row.guests[0] ?? row.order.id })
+                    setBanTarget({
+                      contact: row.contact,
+                      name: row.order.guest?.name ?? row.guests[0] ?? row.order.number,
+                    })
                   }
                 />
               )}

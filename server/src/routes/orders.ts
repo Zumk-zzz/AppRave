@@ -240,7 +240,124 @@ export async function orderRoutes(app: FastifyInstance) {
     await releaseOrder(order.id, 'cancelled');
     return loadOrder(order.id);
   });
+
+  /**
+   * Отмена части заказа: гость передумал брать один коктейль из трёх.
+   *
+   * Возвращается только невыданное. Количество проверяется тем же
+   * условным UPDATE, что и продажа: две отмены одной строки, пришедшие
+   * одновременно, не должны вернуть на склад вдвое больше, чем куплено.
+   */
+  app.post('/orders/:id/lines/:lineId/cancel', async (req) => {
+    const auth = requireUser(req);
+    const { id, lineId } = z
+      .object({ id: z.string(), lineId: z.string() })
+      .parse(req.params);
+    const { qty } = z
+      .object({ qty: z.number().int().min(1).max(50) })
+      .parse(req.body ?? {});
+
+    const order = await db.order.findUnique({ where: { id }, include: { lines: true } });
+    if (!order || order.userId !== auth.sub) throw notFound('Заказ не найден');
+
+    if (order.status !== 'pending' && order.status !== 'paid') {
+      throw conflict('Этот заказ уже нельзя менять', 'not_cancellable');
+    }
+
+    const line = order.lines.find((l) => l.id === lineId);
+    if (!line) throw notFound('Позиция не найдена');
+
+    if (leftOf(line) < qty) {
+      throw conflict(`Отменить можно только ${leftOf(line)}`, 'too_many');
+    }
+
+    await db.$transaction(async (tx) => {
+      const affected = await tx.$executeRaw`
+        UPDATE order_lines
+           SET cancelled_qty = cancelled_qty + ${qty}
+         WHERE id = ${lineId}
+           AND qty - redeemed - cancelled_qty >= ${qty}
+      `;
+
+      if (affected === 0) throw conflict('Позицию уже отменили', 'too_many');
+
+      if (line.kind === 'ticket' && line.ticketTypeId) {
+        await tx.$executeRaw`
+          UPDATE ticket_types
+             SET sold = GREATEST(0, sold - ${qty})
+           WHERE id = ${line.ticketTypeId}
+        `;
+      }
+
+      if (line.kind === 'bar' && line.barItemId) {
+        await tx.$executeRaw`
+          UPDATE stock SET qty = qty + ${qty} WHERE bar_item_id = ${line.barItemId}
+        `;
+        await tx.stockMove.create({
+          data: {
+            barItemId: line.barItemId,
+            kind: 'refund',
+            delta: qty,
+            orderId: order.id,
+            comment: 'Отмена позиции',
+          },
+        });
+      }
+
+      if (line.kind === 'table' && line.tableId) {
+        // Стол освобождается сразу: частичной брони не бывает
+        await tx.tableBooking.updateMany({
+          where: { orderId: order.id, tableId: line.tableId, status: { in: ['pending', 'paid'] } },
+          data: { status: 'cancelled' },
+        });
+      }
+
+      await settleStatus(tx, order.id);
+    });
+
+    return loadOrder(order.id);
+  });
 }
+
+/**
+ * Приводит статус заказа в соответствие со строками.
+ *
+ * Статус выводится, а не хранится сам по себе: иначе он неизбежно
+ * разъедется с содержимым. Важно различать две причины, по которым
+ * выдавать больше нечего: всё выдали (заказ состоялся) или всё отменили
+ * (заказ не состоялся). Без этой развилки полностью отменённый заказ
+ * числился бы использованным.
+ *
+ * Стол не в счёт: его не выдают, и на закрытие заказа он не влияет.
+ */
+async function settleStatus(tx: Prisma.TransactionClient, orderId: string) {
+  const order = await tx.order.findUnique({ where: { id: orderId }, include: { lines: true } });
+  if (!order) return;
+  if (order.status !== 'pending' && order.status !== 'paid') return;
+
+  const relevant = order.lines.filter((l) => l.kind !== 'table');
+  if (relevant.length === 0 || !relevant.every((l) => leftOf(l) === 0)) return;
+
+  const used = relevant.some((l) => l.redeemed > 0);
+
+  await tx.order.update({
+    where: { id: order.id },
+    data: {
+      status: used ? 'used' : 'cancelled',
+      usedAt: used ? (order.usedAt ?? new Date()) : null,
+      expiresAt: null,
+    },
+  });
+
+  if (!used) {
+    await tx.tableBooking.updateMany({
+      where: { orderId: order.id, status: { in: ['pending', 'paid'] } },
+      data: { status: 'cancelled' },
+    });
+  }
+}
+
+export { settleStatus };
 
 /**
  * Возвращает товар заказа в продажу и переводит заказ в конечный статус.
@@ -301,7 +418,39 @@ type OrderRow = Prisma.OrderGetPayload<{
   include: { lines: true; event: true; bookings: true };
 }>;
 
-function toOrderDto(order: OrderRow) {
+type LineRow = OrderRow['lines'][number];
+
+/** Сколько единиц строки ещё можно выдать: не выдано и не отменено. */
+export function leftOf(line: { qty: number; redeemed: number; cancelledQty: number }): number {
+  return Math.max(0, line.qty - line.redeemed - line.cancelledQty);
+}
+
+/**
+ * Строки заказа в виде, одинаковом для гостя и для сканера.
+ *
+ * Один маппер на оба ответа: если состав строки где-то разойдётся,
+ * приложение начнёт показывать гостю одно, а сотруднику другое.
+ */
+export function toLineDtos(order: OrderRow) {
+  return order.lines.map((l: LineRow) => ({
+    id: l.id,
+    kind: l.kind,
+    refId: l.ticketTypeId ?? l.barItemId ?? l.tableId ?? '',
+    title: l.title,
+    subtitle: l.subtitle,
+    priceKopecks: l.priceKopecks,
+    qty: l.qty,
+    redeemed: l.redeemed,
+    cancelledQty: l.cancelledQty,
+    // Список гостей живёт у брони, но показывается в строке стола
+    guests:
+      l.kind === 'table'
+        ? (order.bookings.find((b) => b.tableId === l.tableId)?.guests ?? [])
+        : undefined,
+  }));
+}
+
+export function toOrderDto(order: OrderRow) {
   return {
     id: order.id,
     number: order.number,
@@ -314,14 +463,7 @@ function toOrderDto(order: OrderRow) {
     event: order.event
       ? { id: order.event.id, title: order.event.title, date: order.event.startsAt.toISOString() }
       : null,
-    lines: order.lines.map((l) => ({
-      kind: l.kind,
-      refId: l.ticketTypeId ?? l.barItemId ?? l.tableId ?? '',
-      title: l.title,
-      subtitle: l.subtitle,
-      priceKopecks: l.priceKopecks,
-      qty: l.qty,
-    })),
+    lines: toLineDtos(order),
     guests: order.bookings.flatMap((b) => b.guests),
     // QR собираем здесь, чтобы формат жил в одном месте
     qrPayload: `APPRAVE|${order.number}|${order.userId}|${order.eventId ?? '-'}`,

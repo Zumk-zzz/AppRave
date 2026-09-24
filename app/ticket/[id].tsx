@@ -7,7 +7,11 @@ import QRCode from 'react-native-qrcode-svg';
 import { Badge, Button, Card, Screen, Text } from '@/src/components';
 import { formatEventDate, formatPrice, pluralWithCount } from '@/src/lib/format';
 import { canCancel, CANCEL_BLOCK_TEXT, hoursUntil, REFUND_CUTOFF_HOURS } from '@/src/lib/refund';
-import { isLineCancellable, restoreLine, restoreOrder } from '@/src/lib/order-actions';
+import {
+  isLineCancellable,
+  ORDER_STATUS_LABEL,
+  ORDER_STATUS_TONE,
+} from '@/src/lib/order-actions';
 import type { OrderLine } from '@/src/services';
 import { redeemableOf, useOrdersStore } from '@/src/store/orders';
 import { colors, fonts, radius, spacing } from '@/src/theme';
@@ -18,7 +22,7 @@ export default function TicketScreen() {
 
   const order = useOrdersStore((s) => s.orders.find((o) => o.id === id));
   const cancel = useOrdersStore((s) => s.cancel);
-  const cancelLineUnits = useOrdersStore((s) => s.cancelLineUnits);
+  const cancelLine = useOrdersStore((s) => s.cancelLine);
 
   if (!order) {
     return (
@@ -33,14 +37,11 @@ export default function TicketScreen() {
     );
   }
 
-  // Индекс исходного массива нужен для отмены конкретной строки,
-  // поэтому фильтруем с сохранением позиции, а не просто filter().
-  const indexed = order.lines.map((line, index) => ({ line, index }));
-  const ticketLines = indexed.filter((x) => x.line.kind === 'ticket');
-  const tableLines = indexed.filter((x) => x.line.kind === 'table');
-  const barLines = indexed.filter((x) => x.line.kind === 'bar');
+  const ticketLines = order.lines.filter((l) => l.kind === 'ticket');
+  const tableLines = order.lines.filter((l) => l.kind === 'table');
+  const barLines = order.lines.filter((l) => l.kind === 'bar');
 
-  const handleCancelLine = (line: OrderLine, index: number) => {
+  const handleCancelLine = (line: OrderLine) => {
     const left = redeemableOf(line);
 
     Alert.alert(
@@ -52,9 +53,12 @@ export default function TicketScreen() {
           text: 'Отменить',
           style: 'destructive',
           onPress: async () => {
-            await restoreLine(order, line, left);
-            await cancelLineUnits(order.id, index, left);
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            try {
+              await cancelLine(order.id, line.id, left);
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            } catch (e) {
+              reportFailure(e);
+            }
           },
         },
       ],
@@ -74,11 +78,14 @@ export default function TicketScreen() {
           text: 'Отменить заказ',
           style: 'destructive',
           onPress: async () => {
-            // Возвращаем невыданное туда, откуда оно ушло при оплате,
-            // иначе склад и остаток билетов разойдутся с реальностью.
-            await restoreOrder(order);
-            await cancel(order.id);
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            try {
+              // Билеты и напитки возвращает сервис заказа одной операцией:
+              // на сервере это транзакция, в моках — тот же порядок шагов
+              await cancel(order.id);
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            } catch (e) {
+              reportFailure(e);
+            }
           },
         },
       ],
@@ -97,22 +104,7 @@ export default function TicketScreen() {
         >
           <Ionicons name="close" size={22} color={colors.textMuted} />
         </Pressable>
-        <Badge
-          label={
-            order.status === 'cancelled'
-              ? 'Отменён'
-              : order.status === 'used'
-                ? 'Использован'
-                : 'Оплачено'
-          }
-          tone={
-            order.status === 'cancelled'
-              ? 'danger'
-              : order.status === 'used'
-                ? 'neutral'
-                : 'success'
-          }
-        />
+        <Badge label={ORDER_STATUS_LABEL[order.status]} tone={ORDER_STATUS_TONE[order.status]} />
       </View>
 
       <View style={styles.hero}>
@@ -132,7 +124,7 @@ export default function TicketScreen() {
       {/* QR на белом: сканеры на входе плохо читают код на тёмном фоне */}
       <View style={styles.qrCard}>
         <QRCode value={order.qrPayload} size={216} backgroundColor="#FFFFFF" color="#0A0A0B" />
-        <Text style={styles.orderNo}>{order.id}</Text>
+        <Text style={styles.orderNo}>{order.number}</Text>
       </View>
 
       <Text variant="caption" tone="faint" style={styles.brightness}>
@@ -142,13 +134,11 @@ export default function TicketScreen() {
       <Card style={styles.details}>
         {ticketLines.length > 0 && (
           <Section title="Билеты">
-            {ticketLines.map(({ line, index }) => (
+            {ticketLines.map((line) => (
               <LineRow
-                key={index}
+                key={line.id}
                 line={line}
-                onCancel={
-                  isLineCancellable(order, line) ? () => handleCancelLine(line, index) : undefined
-                }
+                onCancel={isLineCancellable(order, line) ? () => handleCancelLine(line) : undefined}
               />
             ))}
           </Section>
@@ -156,7 +146,7 @@ export default function TicketScreen() {
 
         {tableLines.length > 0 && (
           <Section title="Стол">
-            {tableLines.map(({ line }) => (
+            {tableLines.map((line) => (
               <View key={line.refId} style={styles.tableBlock}>
                 <Row left={line.title} right={formatPrice(line.price)} />
                 {line.guests && line.guests.length > 0 && (
@@ -172,13 +162,11 @@ export default function TicketScreen() {
 
         {barLines.length > 0 && (
           <Section title="Бар — получить у стойки">
-            {barLines.map(({ line, index }) => (
+            {barLines.map((line) => (
               <LineRow
-                key={index}
+                key={line.id}
                 line={line}
-                onCancel={
-                  isLineCancellable(order, line) ? () => handleCancelLine(line, index) : undefined
-                }
+                onCancel={isLineCancellable(order, line) ? () => handleCancelLine(line) : undefined}
               />
             ))}
           </Section>
@@ -190,7 +178,7 @@ export default function TicketScreen() {
         </View>
       </Card>
 
-      {order.status === 'paid' && (
+      {(order.status === 'paid' || order.status === 'pending') && (
         <View style={styles.cancelBlock}>
           {cancelCheck.allowed ? (
             <>
@@ -218,6 +206,18 @@ export default function TicketScreen() {
       <Button label="На афишу" variant="ghost" fullWidth onPress={() => router.replace('/(tabs)')} />
     </Screen>
   );
+}
+
+/**
+ * Сообщение о неудаче.
+ *
+ * Отмена может не пройти по причине, которую видно только на сервере:
+ * гость уже прошёл внутрь, или заказ отменили со второго устройства.
+ * Молча оставить кнопку без реакции нельзя — гость нажмёт ещё пять раз.
+ */
+function reportFailure(e: unknown) {
+  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+  Alert.alert('Не получилось', e instanceof Error ? e.message : 'Попробуйте ещё раз');
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {

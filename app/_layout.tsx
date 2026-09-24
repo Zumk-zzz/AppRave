@@ -44,14 +44,19 @@ export default function RootLayout() {
 
   useEffect(() => {
     void restore();
-    // История заказов читается один раз на старте: экрану билета и списку
-    // заказов иначе пришлось бы грузить её каждому по отдельности и мигать.
-    void loadOrders();
     // Каталог должен быть в памяти раньше первого вызова сервиса — они
     // читают именно из него, а не из констант.
     void loadCatalog();
     void loadStaff();
-  }, [restore, loadOrders, loadCatalog, loadStaff]);
+  }, [restore, loadCatalog, loadStaff]);
+
+  useEffect(() => {
+    // История заказов читается после входа: на сервере она принадлежит
+    // конкретному человеку, и запрашивать её до авторизации бессмысленно.
+    // Читается один раз — иначе экран билета и список заказов грузили бы
+    // её каждый по отдельности и мигали.
+    if (status === 'authed') void loadOrders();
+  }, [status, loadOrders]);
 
   const fontsReady = fontsLoaded || fontError;
   const authReady = status !== 'loading';

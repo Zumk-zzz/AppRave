@@ -5,8 +5,10 @@ import { redeemableOf } from '@/src/store/orders';
 const PREFIX = 'APPRAVE';
 
 export interface ParsedTicket {
-  orderId: string;
-  memberNo: string;
+  /** Короткий номер заказа: по нему заказ и ищется */
+  number: string;
+  /** Признак владельца кода: номер карты в моках, идентификатор на сервере */
+  holder: string;
   eventId: string;
 }
 
@@ -19,22 +21,24 @@ export function parseQrPayload(raw: string): ParsedTicket | null {
   const parts = raw.split('|');
   if (parts.length !== 4 || parts[0] !== PREFIX) return null;
 
-  const [, orderId, memberNo, eventId] = parts;
-  if (!orderId) return null;
+  const [, number, holder, eventId] = parts;
+  if (!number) return null;
 
-  return { orderId, memberNo, eventId };
+  return { number, holder, eventId };
 }
 
 export type ScanVerdict =
   | 'ok'
   | 'nothing-left'
   | 'cancelled'
+  | 'unpaid'
   | 'wrong-event'
   | 'not-found'
   | 'foreign';
 
 export interface BarPosition {
-  lineIndex: number;
+  /** Идентификатор строки: по нему сервер понимает, что выдавать */
+  lineId: string;
   title: string;
   subtitle?: string;
   qty: number;
@@ -69,12 +73,26 @@ export function judgeScan(raw: string, orders: Order[], expectedEventId?: string
   const parsed = parseQrPayload(raw);
   if (!parsed) return { verdict: 'foreign', ...EMPTY };
 
-  const order = orders.find((o) => o.id === parsed.orderId);
+  return judgeOrder(orders.find((o) => o.number === parsed.number) ?? null, expectedEventId);
+}
+
+/**
+ * Вердикт по уже найденному заказу.
+ *
+ * Отдельно от разбора кода, потому что искать заказ приходится на
+ * сервере: чужая покупка на телефоне сотрудника взяться не может.
+ */
+export function judgeOrder(order: Order | null, expectedEventId?: string): ScanSummary {
   if (!order) return { verdict: 'not-found', ...EMPTY };
 
   const summary = describe(order);
 
-  if (order.status === 'cancelled') return { ...summary, verdict: 'cancelled', order };
+  if (order.status === 'cancelled' || order.status === 'expired') {
+    return { ...summary, verdict: 'cancelled', order };
+  }
+
+  // Неоплаченный резерв внутрь не пускает: деньги за него не пришли
+  if (order.status === 'pending') return { ...summary, verdict: 'unpaid', order };
 
   if (expectedEventId && order.eventId !== expectedEventId) {
     return { ...summary, verdict: 'wrong-event', order };
@@ -90,10 +108,9 @@ export function describe(order: Order): Omit<ScanSummary, 'verdict' | 'order'> {
   const tableLine = order.lines.find((l) => l.kind === 'table');
 
   const bar: BarPosition[] = order.lines
-    .map((line, lineIndex) => ({ line, lineIndex }))
-    .filter(({ line }) => line.kind === 'bar')
-    .map(({ line, lineIndex }) => ({
-      lineIndex,
+    .filter((line) => line.kind === 'bar')
+    .map((line) => ({
+      lineId: line.id,
       title: line.title,
       subtitle: line.subtitle,
       qty: line.qty,
@@ -116,6 +133,7 @@ export const VERDICT_TITLE: Record<ScanVerdict, string> = {
   ok: 'Код действителен',
   'nothing-left': 'Всё уже выдано',
   cancelled: 'Заказ отменён',
+  unpaid: 'Заказ не оплачен',
   'wrong-event': 'Другая вечеринка',
   'not-found': 'Заказ не найден',
   foreign: 'Это не код AppRave',
@@ -125,6 +143,7 @@ export const VERDICT_HINT: Record<ScanVerdict, string> = {
   ok: 'Отметьте, что именно выдали',
   'nothing-left': 'По этому заказу проход отмечен и напитки выданы',
   cancelled: 'Заказ вернули, обслуживать по нему нечего',
+  unpaid: 'Бронь есть, оплата не прошла — пусть оплатит в приложении',
   'wrong-event': 'Код настоящий, но оформлен на другую дату',
   'not-found': 'Код наш, но такого заказа нет',
   foreign: 'Посторонний код — попросите открыть билет в приложении',

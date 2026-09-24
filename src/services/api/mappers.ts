@@ -1,4 +1,12 @@
-import type { BarItem, ClubEvent, ClubTable, User } from '@/src/services/types';
+import type {
+  BarItem,
+  ClubEvent,
+  ClubTable,
+  Order,
+  OrderLine,
+  OrderStatus,
+  User,
+} from '@/src/services/types';
 
 /**
  * Перевод между формой сервера и моделью приложения.
@@ -136,4 +144,79 @@ export function mapUser(u: ApiUser): User {
   };
 }
 
-export type { ApiBarItem, ApiEvent, ApiTable, ApiUser };
+interface ApiOrderLine {
+  id: string;
+  kind: OrderLine['kind'];
+  refId: string;
+  title: string;
+  subtitle: string | null;
+  priceKopecks: number;
+  qty: number;
+  redeemed: number;
+  cancelledQty: number;
+  guests?: string[];
+}
+
+interface ApiOrder {
+  id: string;
+  number: string;
+  status: 'draft' | 'pending' | 'paid' | 'expired' | 'cancelled' | 'refunded' | 'used';
+  totalKopecks: number;
+  pointsEarned: number;
+  createdAt: string;
+  expiresAt: string | null;
+  paidAt: string | null;
+  event: { id: string; title: string; date: string } | null;
+  lines: ApiOrderLine[];
+  qrPayload: string;
+  guest?: { name: string; contact: string | null };
+}
+
+/**
+ * Статусы сервера богаче: у него есть черновик и возврат средств.
+ * Приложению эти различия не нужны — на экране от них ничего не зависит,
+ * а разбирать семь состояний в каждом бейдже было бы лишним.
+ */
+const STATUS: Record<ApiOrder['status'], OrderStatus> = {
+  draft: 'pending',
+  pending: 'pending',
+  paid: 'paid',
+  used: 'used',
+  expired: 'expired',
+  cancelled: 'cancelled',
+  refunded: 'cancelled',
+};
+
+export function mapOrder(o: ApiOrder): Order {
+  return {
+    id: o.id,
+    number: o.number,
+    createdAt: o.createdAt,
+    eventId: o.event?.id,
+    eventTitle: o.event?.title,
+    eventDate: o.event?.date,
+    lines: o.lines.map(mapOrderLine),
+    total: toRubles(o.totalKopecks),
+    pointsEarned: o.pointsEarned,
+    status: STATUS[o.status],
+    qrPayload: o.qrPayload,
+    guest: o.guest ? { name: o.guest.name, contact: o.guest.contact ?? undefined } : undefined,
+  };
+}
+
+function mapOrderLine(l: ApiOrderLine): OrderLine {
+  return {
+    id: l.id,
+    kind: l.kind,
+    refId: l.refId,
+    title: l.title,
+    subtitle: l.subtitle ?? undefined,
+    price: toRubles(l.priceKopecks),
+    qty: l.qty,
+    redeemed: l.redeemed,
+    cancelled: l.cancelledQty,
+    guests: l.guests,
+  };
+}
+
+export type { ApiBarItem, ApiEvent, ApiOrder, ApiTable, ApiUser };
