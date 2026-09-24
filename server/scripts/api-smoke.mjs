@@ -90,6 +90,10 @@ const noAuthTables = await api(`/events/${withStock.id}/tables`);
 check('схема зала отдаётся', noAuthTables.status === 200 && noAuthTables.body.length === 12);
 
 console.log('\n=== Защита ролей ===');
+// Прошлый прогон мог прерваться с открытой сменой, а от неё зависят
+// права: без уборки набор проверял бы не то, что написано в его названиях
+await api('/staff/shift/close', { method: 'POST', token: admin.token, body: {} });
+
 // Сотрудник не на смене — обычный гость: он тоже приходит отдыхать
 const offShift = await api('/orders', {
   method: 'POST', token: admin.token, key: uid(),

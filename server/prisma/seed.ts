@@ -131,7 +131,13 @@ async function main() {
   // не трогаем — снести чужие покупки при пересеве было бы неприятно.
   const existing = await db.event.count();
   if (existing > 0) {
-    console.log('Каталог уже наполнен, пропускаю. Для пересева: npx prisma migrate reset');
+    console.log(
+      [
+        'Каталог уже наполнен, пропускаю.',
+        'Если вечеринки оказались в прошлом — npm run demo:refresh сдвинет афишу вперёд.',
+        'Полный пересев: npx prisma migrate reset (удалит заказы и пользователей).',
+      ].join('\n'),
+    );
     return;
   }
 

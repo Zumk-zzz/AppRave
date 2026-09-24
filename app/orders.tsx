@@ -5,7 +5,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { Badge, Button, Card, OfflineNotice, Screen, Text } from '@/src/components';
 import { formatEventDate, formatPrice, pluralWithCount } from '@/src/lib/format';
 import { ORDER_STATUS_LABEL, ORDER_STATUS_TONE } from '@/src/lib/order-actions';
-import { canCancel } from '@/src/lib/refund';
+import { canCancel, CANCEL_BLOCK_TEXT } from '@/src/lib/refund';
 import { useCancelOrder } from '@/src/features/orders/useCancelOrder';
 import type { Order } from '@/src/services';
 import { useOrdersStore } from '@/src/store/orders';
@@ -71,7 +71,9 @@ function OrderCard({
 }) {
   const totalItems = order.lines.reduce((sum, l) => sum + l.qty, 0);
   const isPast = order.eventDate ? new Date(order.eventDate).getTime() < Date.now() : false;
-  const cancellable = canCancel(order).allowed;
+  const check = canCancel(order);
+  // Заказ ещё «живой»: по завершённому и отменённому объяснять нечего
+  const active = order.status === 'paid' || order.status === 'pending';
 
   return (
     <Card onPress={onPress} style={styles.card}>
@@ -102,21 +104,30 @@ function OrderCard({
       </View>
 
       {/* Отмена прямо в списке: раньше до неё нужно было догадаться
-          открыть билет, и гости её просто не находили */}
-      {cancellable && (
-        <Button
-          label={busy ? 'Отменяем…' : 'Отменить заказ'}
-          variant="ghost"
-          fullWidth
-          loading={busy}
-          onPress={onCancel}
-        />
-      )}
+          открыть билет. А когда отменить нельзя — говорим почему:
+          пустое место читается как «функции нет», и её начинают искать */}
+      {active &&
+        (check.allowed ? (
+          <Button
+            label={busy ? 'Отменяем…' : 'Отменить заказ'}
+            variant="ghost"
+            fullWidth
+            loading={busy}
+            onPress={onCancel}
+          />
+        ) : (
+          <Text variant="caption" tone="faint" style={styles.cancelNote}>
+            {CANCEL_BLOCK_TEXT[check.reason ?? 'status']}
+          </Text>
+        ))}
     </Card>
   );
 }
 
 const styles = StyleSheet.create({
+  cancelNote: {
+    textAlign: 'center',
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
