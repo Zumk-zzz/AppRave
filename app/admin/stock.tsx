@@ -90,7 +90,7 @@ export default function AdminStock() {
         </Card>
       )}
 
-      <SectionHeader title="Остатки" kicker="Наличие" />
+      <SectionHeader title="Остатки" kicker="Наличие" spaced />
       <View style={styles.list}>
         {stock.map((s) => {
           const item = barMenu.find((i) => i.id === s.barItemId);
@@ -122,7 +122,7 @@ export default function AdminStock() {
         })}
       </View>
 
-      <SectionHeader title="Журнал" kicker="История движений" />
+      <SectionHeader title="Журнал" kicker="История движений" spaced />
       {moves.length === 0 ? (
         <Text variant="caption" tone="faint" style={styles.empty}>
           Движений пока не было. Приходы, списания и продажи появятся здесь.

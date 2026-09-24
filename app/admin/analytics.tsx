@@ -64,19 +64,19 @@ export default function AdminAnalytics() {
         <Metric value={`${cancelRate(orders)}%`} label="Отмен" />
       </View>
 
-      <SectionHeader title="Выручка по дням" kicker="Динамика" />
+      <SectionHeader title="Выручка по дням" kicker="Динамика" spaced />
       <Card style={styles.chartCard}>
         <Chart buckets={buckets} />
       </Card>
 
-      <SectionHeader title="Топ бара" kicker="По выручке" />
+      <SectionHeader title="Топ бара" kicker="По выручке" spaced />
       <TopList
         entries={topBar}
         empty="Напитки пока не заказывали"
         unit={['порция', 'порции', 'порций']}
       />
 
-      <SectionHeader title="Топ билетов" kicker="По выручке" />
+      <SectionHeader title="Топ билетов" kicker="По выручке" spaced />
       <TopList
         entries={topTickets}
         empty="Билеты пока не покупали"

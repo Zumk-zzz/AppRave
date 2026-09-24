@@ -34,7 +34,7 @@ export default function Welcome() {
 
       <View style={styles.actions}>
         <Button
-          label="Войти по номеру"
+          label="Войти"
           size="lg"
           fullWidth
           onPress={() => router.push('/(auth)/phone')}

@@ -104,7 +104,7 @@ export default function TicketScreen() {
 
       {/* QR на белом: сканеры на входе плохо читают код на тёмном фоне */}
       <View style={styles.qrCard}>
-        <QRCode value={order.qrPayload} size={216} backgroundColor="#FFFFFF" color="#0A0A0B" />
+        <QRCode value={order.qrPayload} size={216} backgroundColor={colors.qrBackground} color={colors.qrForeground} />
         <Text style={styles.orderNo}>{order.number}</Text>
       </View>
 
@@ -339,7 +339,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     alignItems: 'center',
     gap: spacing.md,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.qrBackground,
     borderRadius: radius.lg,
     padding: spacing.xl,
   },
@@ -347,7 +347,7 @@ const styles = StyleSheet.create({
     fontFamily: fonts.display,
     fontSize: 16,
     letterSpacing: 2,
-    color: '#0A0A0B',
+    color: colors.qrForeground,
   },
   refunded: {
     flexDirection: 'row',

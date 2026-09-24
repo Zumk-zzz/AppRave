@@ -11,11 +11,25 @@ export interface SectionHeaderProps {
   /** Действие справа: «Все», «Изменить» */
   actionLabel?: string;
   onActionPress?: () => void;
+  /**
+   * Отступ сверху: нужен, когда заголовок идёт следом за карточкой.
+   *
+   * Без него новая секция прилипает к предыдущей, и подпись читается
+   * как часть того, что над ней. Первому заголовку на экране отступ
+   * не нужен — там уже есть поле страницы.
+   */
+  spaced?: boolean;
 }
 
-export function SectionHeader({ title, kicker, actionLabel, onActionPress }: SectionHeaderProps) {
+export function SectionHeader({
+  title,
+  kicker,
+  actionLabel,
+  onActionPress,
+  spaced,
+}: SectionHeaderProps) {
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, spaced && styles.spaced]}>
       <View style={styles.titles}>
         {kicker && (
           <Text variant="label" tone="accent" style={styles.kicker}>
@@ -51,11 +65,16 @@ const styles = StyleSheet.create({
     gap: spacing.lg,
     marginBottom: spacing.lg,
   },
+  spaced: {
+    marginTop: spacing.xxl,
+  },
   titles: {
     flex: 1,
     gap: spacing.xs,
   },
   kicker: {
-    marginBottom: 2,
+    // Подпись набрана мелким шрифтом в верхнем регистре: без этого
+    // зазора она читается как первая строка заголовка
+    marginBottom: spacing.xs,
   },
 });

@@ -39,7 +39,7 @@ export function SourceCard() {
 
   return (
     <>
-      <SectionHeader title="Источник данных" kicker="Разработка" />
+      <SectionHeader title="Источник данных" kicker="Разработка" spaced />
 
       <Card style={styles.card}>
         <View style={styles.row}>

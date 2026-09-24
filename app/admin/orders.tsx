@@ -98,7 +98,7 @@ export default function AdminOrders() {
         />
       </View>
 
-      <SectionHeader title="Продажи" kicker="Новые сверху" />
+      <SectionHeader title="Продажи" kicker="Новые сверху" spaced />
 
       {visible.length === 0 ? (
         <Text variant="body" tone="muted" style={styles.empty}>

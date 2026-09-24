@@ -62,7 +62,7 @@ export default function CardTab() {
 
           {/* QR карты = номер участника, его сканируют на кассе и входе */}
           <View style={styles.cardQr}>
-            <QRCode value={user.memberNo} size={64} backgroundColor="#FFFFFF" color="#0A0A0B" />
+            <QRCode value={user.memberNo} size={64} backgroundColor={colors.qrBackground} color={colors.qrForeground} />
           </View>
         </View>
 
@@ -206,7 +206,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   cardQr: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.qrBackground,
     padding: spacing.sm,
     borderRadius: radius.sm,
   },

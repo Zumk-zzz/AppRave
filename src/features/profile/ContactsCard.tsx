@@ -7,7 +7,7 @@ import { Badge, Button, Card, Field, SectionHeader, Sheet, Text } from '@/src/co
 import { formatContact, parseContact, type Channel } from '@/src/lib/contact';
 import { authService, DEMO_CODE, InvalidCodeError } from '@/src/services';
 import { useAuthStore } from '@/src/store/auth';
-import { colors, radius, spacing } from '@/src/theme';
+import { colors, spacing } from '@/src/theme';
 
 /**
  * Способы входа в аккаунт.
@@ -76,7 +76,7 @@ export function ContactsCard() {
 
   return (
     <>
-      <SectionHeader title="Вход в аккаунт" kicker="Телефон и почта" />
+      <SectionHeader title="Вход в аккаунт" kicker="Телефон и почта" spaced />
 
       <Card style={styles.card}>
         <Row

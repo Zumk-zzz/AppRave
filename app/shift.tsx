@@ -159,6 +159,7 @@ export default function ShiftScreen() {
       {seesEveryone && (
         <>
           <SectionHeader
+            spaced
             title="Смены команды"
             kicker={onShiftNow.length > 0 ? `Сейчас в зале: ${onShiftNow.length}` : 'Сейчас никого'}
           />
@@ -178,6 +179,7 @@ export default function ShiftScreen() {
       )}
 
       <SectionHeader
+        spaced
         title="Журнал"
         kicker={seesEveryone ? 'Действия всей команды' : 'Ваши действия'}
       />
