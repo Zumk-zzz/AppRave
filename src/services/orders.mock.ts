@@ -3,6 +3,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { pointsForPurchase } from '@/src/lib/loyalty';
 import { deriveStatus, redeemableOf } from '@/src/lib/order-status';
 import { mockCatalog } from './catalog.mock';
+import { currentActor } from './session';
+import { logMock } from './staff.mock';
 import type { CheckoutItem, Order, OrderLine, OrdersService } from './types';
 
 /**
@@ -152,12 +154,21 @@ export const mockOrdersService: OrdersService = {
     );
   },
 
-  async admit(order) {
+  async admit(order, manual = false) {
     const fresh = await find(order.id);
 
-    const lines = fresh.lines.map((line) =>
-      line.kind === 'ticket' ? { ...line, redeemed: line.redeemed + redeemableOf(line) } : line,
-    );
+    let admitted = 0;
+    const lines = fresh.lines.map((line) => {
+      if (line.kind !== 'ticket') return line;
+
+      const left = redeemableOf(line);
+      admitted += left;
+      return { ...line, redeemed: line.redeemed + left };
+    });
+
+    // Журнал ведёт тот, кто исполняет действие. На сервере это делает
+    // он сам, здесь — сервис: экрану журнал не доверяют ни там, ни тут.
+    await log(manual ? 'entry_manual' : 'entry_admitted', fresh.number, `${admitted} гостей`);
 
     return replace(withStatus({ ...fresh, lines }));
   },
@@ -174,9 +185,19 @@ export const mockOrdersService: OrdersService = {
       l.id === lineId ? { ...l, redeemed: l.redeemed + take } : l,
     );
 
+    await log('bar_issued', fresh.number, `${line.title} × ${take}`);
+
     return replace(withStatus({ ...fresh, lines }));
   },
 };
+
+/** Запись в журнал от имени того, кто сейчас на смене. */
+async function log(kind: 'entry_admitted' | 'entry_manual' | 'bar_issued', orderId: string, summary: string) {
+  const user = currentActor();
+  if (!user) return;
+
+  await logMock({ kind, user, orderId, summary });
+}
 
 function withStatus(order: Order): Order {
   const status = deriveStatus(order);

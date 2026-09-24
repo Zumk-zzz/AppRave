@@ -33,5 +33,6 @@ export const staffService = useApi ? apiStaffService : mockStaffService;
 
 export { API_URL, ApiError, fetchMe, NetworkError, ping, setToken } from './api';
 export { ADMIN_PHONE, DEMO_CODE, STAFF_PHONES } from './auth.mock';
+export { currentActor, setActor } from './session';
 export { getDataSource, setDataSource, type DataSource } from './source';
 export * from './types';

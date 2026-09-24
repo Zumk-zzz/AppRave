@@ -2,7 +2,7 @@ import * as SecureStore from 'expo-secure-store';
 import { create } from 'zustand';
 
 import { can, effectiveRole, type Permission, type UserRole } from '@/src/lib/permissions';
-import { authService, setToken, type User } from '@/src/services';
+import { authService, setActor, setToken, type User } from '@/src/services';
 import { useOrdersStore } from './orders';
 import { useStaffStore } from './staff';
 
@@ -54,6 +54,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         const saved = migrateUser(JSON.parse(raw) as User & { role?: string });
         const mode = await SecureStore.getItemAsync(WORK_MODE_KEY).catch(() => null);
 
+        setActor(saved);
         set({
           user: saved,
           // Режим имеет смысл только у сотрудника: у гостя он всегда выключен
@@ -66,6 +67,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // Повреждённая или недоступная сессия не должна блокировать вход —
       // просто показываем экран авторизации.
     }
+    setActor(null);
     set({ user: null, atWork: false, status: 'guest' });
   },
 
@@ -73,6 +75,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // Ошибку намеренно не гасим: экран показывает её пользователю.
     const user = await authService.verifyCode(contact, code);
     await persist(user);
+    // Автономные сервисы узнают действующего сотрудника отсюда: на
+    // сервере его роль приходит в токене, без сервера — взять неоткуда
+    setActor(user);
     // Вход всегда начинается в гостевом режиме: сотрудник включает
     // рабочий сам, когда выходит на смену.
     set({ user, atWork: false, status: 'authed' });
@@ -85,6 +90,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // Ошибку не гасим: экран показывает её пользователю
     const updated = await authService.linkContact(current, contact, code);
     await persist(updated);
+    setActor(updated);
     set({ user: updated });
   },
 
@@ -99,6 +105,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // Даже если стереть не удалось, из состояния пользователя убираем.
     }
 
+    setActor(null);
     useOrdersStore.getState().clear();
     useStaffStore.getState().clear();
     set({ user: null, atWork: false, status: 'guest' });
@@ -109,6 +116,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (!current) return;
 
     const next = { ...current, ...patch };
+    setActor(next);
     set({ user: next });
     void persist(next);
   },
