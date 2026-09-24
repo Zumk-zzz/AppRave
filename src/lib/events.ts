@@ -35,6 +35,22 @@ export function shelfOf(event: ClubEvent, now: number = Date.now()): EventShelf 
   return isLive(event.date, now) ? 'live' : 'past';
 }
 
+/**
+ * Ближайшая вечеринка: та, что идёт сейчас или начнётся раньше прочих.
+ *
+ * Нужна везде, где выбор даты был лишним шагом. Клуб живёт одной ночью:
+ * бармен выдаёт напитки сегодняшним гостям, фейсер пускает сегодняшних,
+ * и заказ гостя почти всегда к ближайшей вечеринке. Список для выбора
+ * в таких местах только мешает — и однажды в нём выберут не ту строку.
+ */
+export function nearestEvent(events: ClubEvent[], now: number = Date.now()): ClubEvent | null {
+  const upcoming = events
+    .filter((e) => (e.status ?? 'published') === 'published' && isLive(e.date, now))
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+  return upcoming[0] ?? null;
+}
+
 /** Самый дешёвый доступный билет — цена «от» на карточке. */
 export function minPrice(event: ClubEvent): number {
   const inStock = event.tickets.filter((t) => t.available > 0);

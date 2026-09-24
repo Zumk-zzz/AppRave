@@ -3,11 +3,10 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { Badge, Card, Chip, ChipRow, Screen, Text } from '@/src/components';
-import { isLive } from '@/src/lib/events';
-import { pluralWithCount } from '@/src/lib/format';
+import { Badge, Card, Screen, Text } from '@/src/components';
+import { nearestEvent } from '@/src/lib/events';
+import { formatEventDate, pluralWithCount } from '@/src/lib/format';
 import { eventsService, type ClubEvent } from '@/src/services';
-import { useCatalogStore } from '@/src/store/catalog';
 import { redeemableOf, useOrdersStore } from '@/src/store/orders';
 import { colors, radius, spacing } from '@/src/theme';
 
@@ -20,21 +19,16 @@ import { colors, radius, spacing } from '@/src/theme';
 export default function QueueTab() {
   const orders = useOrdersStore((s) => s.staffOrders);
   const loadStaff = useOrdersStore((s) => s.loadStaff);
-  const catalogEvents = useCatalogStore((s) => s.events);
 
-  const [events, setEvents] = useState<ClubEvent[]>([]);
-  const [eventId, setEventId] = useState<string | null>(null);
+  const [event, setEvent] = useState<ClubEvent | null>(null);
+  const eventId = event?.id ?? null;
 
+  // Вечеринка определяется сама: бармен готовит напитки для той ночи,
+  // которая идёт, и выбирать её из списка незачем
   useFocusEffect(
     useCallback(() => {
       void (async () => {
-        // Прошедшие и черновики сюда не нужны: на смене работают
-        // с той вечеринкой, которая идёт сейчас
-        const list = (await eventsService.list()).filter(
-          (e) => isLive(e.date) && (e.status ?? 'published') === 'published',
-        );
-        setEvents(list);
-        setEventId((current) => current ?? list[0]?.id ?? null);
+        setEvent(nearestEvent(await eventsService.list()));
       })();
     }, []),
   );
@@ -63,7 +57,7 @@ export default function QueueTab() {
     0,
   );
 
-  const eventTitle = catalogEvents.find((e) => e.id === eventId)?.title;
+  const eventTitle = event?.title;
 
   return (
     <Screen scroll padded={false}>
@@ -79,23 +73,20 @@ export default function QueueTab() {
         </Text>
       </View>
 
-      <ChipRow>
-        {events.map((e) => (
-          <Chip
-            key={e.id}
-            label={e.title}
-            selected={e.id === eventId}
-            onPress={() => setEventId(e.id)}
-          />
-        ))}
-      </ChipRow>
+      <View style={styles.header}>
+        <Text variant="caption" tone={event ? 'muted' : 'danger'}>
+          {event
+            ? `Смена: ${event.title} · ${formatEventDate(new Date(event.date))}`
+            : 'Ближайшей вечеринки нет'}
+        </Text>
+      </View>
 
       <View style={styles.list}>
         {pending.length === 0 ? (
           <View style={styles.empty}>
             <Ionicons name="checkmark-done" size={36} color={colors.textFaint} />
             <Text variant="body" tone="muted" style={styles.center}>
-              По вечеринке {eventTitle ?? '—'} всё выдано
+              {eventTitle ? `По вечеринке ${eventTitle} всё выдано` : 'Выдавать нечего'}
             </Text>
           </View>
         ) : (

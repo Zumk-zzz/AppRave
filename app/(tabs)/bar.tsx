@@ -2,9 +2,10 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
-import { Badge, Card, Chip, ChipRow, Screen, Stepper, Text, ViewOnlyNote } from '@/src/components';
+import { Badge, Card, Chip, ChipRow, Screen, Stepper, Text } from '@/src/components';
 import { CATEGORY_LABEL, CATEGORY_ORDER } from '@/src/data/bar';
-import { formatPrice, pluralWithCount } from '@/src/lib/format';
+import { nearestEvent } from '@/src/lib/events';
+import { formatEventDate, formatPrice, pluralWithCount } from '@/src/lib/format';
 import { barService, eventsService, type BarCategory, type BarItem, type ClubEvent } from '@/src/services';
 import { useCan } from '@/src/store/auth';
 import { buildLineId, useCartStore } from '@/src/store/cart';
@@ -20,7 +21,6 @@ export default function BarTab() {
   const canBuy = useCan('purchase');
 
   const [events, setEvents] = useState<ClubEvent[] | null>(null);
-  const [eventId, setEventId] = useState<string | null>(null);
   const [menu, setMenu] = useState<BarItem[] | null>(null);
   const [filter, setFilter] = useState<Filter>('all');
 
@@ -30,11 +30,30 @@ export default function BarTab() {
       void (async () => {
         const [list, loadedMenu] = await Promise.all([eventsService.list(), barService.menu()]);
         setEvents(list);
-        setEventId((current) => current ?? list[0]?.id ?? null);
         setMenu(loadedMenu);
       })();
     }, []),
   );
+
+  /**
+   * К какой вечеринке относится заказ бара.
+   *
+   * Раньше её выбирали из списка, хотя почти всегда это ближайшая ночь.
+   * Но не всегда: если гость прямо сейчас берёт билет на следующую
+   * пятницу, коктейли должны уехать туда же, иначе он придёт за ними
+   * не в тот день. Поэтому сначала смотрим, что уже в корзине, и только
+   * потом берём ближайшую.
+   */
+  const event = useMemo(() => {
+    if (!events) return null;
+
+    const planned = items.find((i) => i.kind !== 'bar' && i.eventId);
+    const fromCart = planned && events.find((e) => e.id === planned.eventId);
+
+    return fromCart ?? nearestEvent(events);
+  }, [events, items]);
+
+  const eventId = event?.id ?? null;
 
   const counts = useMemo(() => {
     const map = new Map<BarCategory, number>();
@@ -81,7 +100,6 @@ export default function BarTab() {
     setQty(lineId, next);
   };
 
-  const event = events?.find((e) => e.id === eventId) ?? null;
 
   return (
     <Screen scroll padded={false} contentContainerStyle={styles.scrollBody}>
@@ -101,25 +119,18 @@ export default function BarTab() {
         </View>
       ) : (
         <>
-          <ChipRow>
-            {events.map((e) => (
-              <Chip
-                key={e.id}
-                label={e.title}
-                selected={e.id === eventId}
-                onPress={() => setEventId(e.id)}
-              />
-            ))}
-          </ChipRow>
-
-          {event && (
-            <Text variant="caption" tone="faint" style={styles.eventNote}>
-              Заказ к вечеринке {event.title}
-              {canBuy && barCount > 0
-                ? ` · ${pluralWithCount(barCount, 'позиция', 'позиции', 'позиций')} на ${formatPrice(barTotal)}`
-                : ''}
-            </Text>
-          )}
+          <Text
+            variant="caption"
+            tone={event ? 'faint' : 'danger'}
+            style={styles.eventNote}
+          >
+            {event
+              ? `К вечеринке ${event.title} · ${formatEventDate(new Date(event.date))}`
+              : 'Ближайшей вечеринки нет — заказать пока не к чему'}
+            {event && canBuy && barCount > 0
+              ? ` · ${pluralWithCount(barCount, 'позиция', 'позиции', 'позиций')} на ${formatPrice(barTotal)}`
+              : ''}
+          </Text>
 
           <View style={styles.categories}>
             <ChipRow>

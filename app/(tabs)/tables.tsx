@@ -7,6 +7,7 @@ import { Badge, Button, Card, Chip, ChipRow, Screen, Text, ViewOnlyNote } from '
 import { ZONE_LABEL } from '@/src/data/tables';
 import { FloorLegend, FloorMap } from '@/src/features/tables/FloorMap';
 import { GuestListSheet } from '@/src/features/tables/GuestListSheet';
+import { nearestEvent } from '@/src/lib/events';
 import { formatEventDate, formatPrice, pluralWithCount } from '@/src/lib/format';
 import { bookingService, eventsService, type ClubEvent, type ClubTable } from '@/src/services';
 import { useCan } from '@/src/store/auth';
@@ -32,7 +33,17 @@ export default function TablesTab() {
       void (async () => {
         const list = await eventsService.list();
         setEvents(list);
-        setEventId((current) => current ?? list[0]?.id ?? null);
+
+        // Дату здесь оставляем выбираемой: занятость столов от неё зависит,
+        // и стол на день рождения через неделю — обычное дело. Но по
+        // умолчанию подставляем ту же вечеринку, что уже в корзине,
+        // иначе ближайшую — как это делает бар.
+        setEventId((current) => {
+          if (current) return current;
+
+          const planned = cartItems.find((i) => i.kind !== 'table' && i.eventId);
+          return planned?.eventId ?? nearestEvent(list)?.id ?? null;
+        });
       })();
     }, []),
   );

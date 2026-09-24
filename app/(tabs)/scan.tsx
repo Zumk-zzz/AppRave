@@ -1,11 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Haptics from 'expo-haptics';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
 
-import { Badge, Button, Card, Chip, ChipRow, Screen, Stepper, Text } from '@/src/components';
-import { isLive } from '@/src/lib/events';
+import { Badge, Button, Card, Screen, Stepper, Text } from '@/src/components';
+import { nearestEvent } from '@/src/lib/events';
 import { formatEventDate, pluralWithCount } from '@/src/lib/format';
 import {
   describe,
@@ -53,27 +53,21 @@ export default function AdminScan() {
   const issue = useOrdersStore((s) => s.issue);
   const bans = useStaffStore((s) => s.bans);
 
-  const [eventId, setEventId] = useState<string | null>(null);
   const [scan, setScan] = useState<ScanSummary | null>(null);
   /** Сколько штук каждой позиции бара сотрудник собирается выдать прямо сейчас */
   const [issuing, setIssuing] = useState<Record<string, number>>({});
   const [busy, setBusy] = useState(false);
   const locked = useRef(false);
 
-  // Работают с той вечеринкой, что идёт или вот-вот начнётся.
-  // У админа каталог содержит и прошедшие, и черновики — в выборе
-  // события на смене им делать нечего.
-  const upcoming = useMemo(
-    () =>
-      events
-        .filter((e) => isLive(e.date) && (e.status ?? 'published') === 'published')
-        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()),
-    [events],
-  );
-
-  useEffect(() => {
-    setEventId((current) => current ?? upcoming[0]?.id ?? null);
-  }, [upcoming]);
+  /**
+   * Вечеринка, которую обслуживают прямо сейчас.
+   *
+   * Раньше её выбирали из списка. На входе это лишний шаг и источник
+   * ошибок: выбрал соседнюю строку — и каждый код показывает «другая
+   * вечеринка». Клуб работает одной ночью, и определить её можно самим.
+   */
+  const current = useMemo(() => nearestEvent(events), [events]);
+  const eventId = current?.id ?? null;
 
   /** Показывает вердикт и заранее подставляет «выдать всё, что осталось». */
   const show = useCallback((result: ScanSummary) => {
@@ -203,19 +197,13 @@ export default function AdminScan() {
         <ScanHeader />
       </View>
 
-      <ChipRow>
-        {upcoming.map((e) => (
-          <Chip
-            key={e.id}
-            label={e.title}
-            selected={e.id === eventId}
-            onPress={() => {
-              setEventId(e.id);
-              setScan(null);
-            }}
-          />
-        ))}
-      </ChipRow>
+      <View style={styles.padded}>
+        <Text variant="caption" tone={current ? 'muted' : 'danger'}>
+          {current
+            ? `Смена: ${current.title} · ${formatEventDate(new Date(current.date))}`
+            : 'Ближайшей вечеринки нет — коды не с чем сверять'}
+        </Text>
+      </View>
 
       <View style={[styles.padded, styles.cameraWrap]}>
         <View style={styles.camera}>

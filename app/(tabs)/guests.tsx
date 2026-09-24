@@ -4,12 +4,12 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { Alert, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
-import { Badge, Button, Card, Chip, ChipRow, Field, Screen, Segmented, Sheet, Text } from '@/src/components';
-import { isLive } from '@/src/lib/events';
-import { pluralWithCount } from '@/src/lib/format';
+import { Badge, Button, Card, Field, Screen, Segmented, Sheet, Text } from '@/src/components';
+import { nearestEvent } from '@/src/lib/events';
+import { formatEventDate, pluralWithCount } from '@/src/lib/format';
 import { eventsService, type ClubEvent, type Order } from '@/src/services';
 import { formatContact } from '@/src/lib/contact';
-import { useAuthStore, useRole } from '@/src/store/auth';
+import { useAuthStore } from '@/src/store/auth';
 import { redeemableOf, useOrdersStore } from '@/src/store/orders';
 import { useStaffStore } from '@/src/store/staff';
 import { colors, fonts, fontSize, radius, spacing } from '@/src/theme';
@@ -27,28 +27,24 @@ export default function GuestsTab() {
   const admit = useOrdersStore((s) => s.admit);
 
   const me = useAuthStore((s) => s.user);
-  const myRole = useRole();
   const bans = useStaffStore((s) => s.bans);
   const addBan = useStaffStore((s) => s.addBan);
   const liftBan = useStaffStore((s) => s.liftBan);
 
-  const [events, setEvents] = useState<ClubEvent[]>([]);
-  const [eventId, setEventId] = useState<string | null>(null);
+  const [event, setEvent] = useState<ClubEvent | null>(null);
+  const eventId = event?.id ?? null;
   const [query, setQuery] = useState('');
   const [tab, setTab] = useState<'list' | 'bans'>('list');
   const [banTarget, setBanTarget] = useState<{ contact: string; name?: string } | null>(null);
   const [reason, setReason] = useState('');
 
+  // Вечеринку не выбирают: на входе работают с той, что идёт сегодня.
+  // Выбор был лишним шагом, а ошибка в нём означала пустой список
+  // гостей при полной очереди на улице.
   useFocusEffect(
     useCallback(() => {
       void (async () => {
-        // Прошедшие и черновики сюда не нужны: на смене работают
-        // с той вечеринкой, которая идёт сейчас
-        const list = (await eventsService.list()).filter(
-          (e) => isLive(e.date) && (e.status ?? 'published') === 'published',
-        );
-        setEvents(list);
-        setEventId((current) => current ?? list[0]?.id ?? null);
+        setEvent(nearestEvent(await eventsService.list()));
       })();
     }, []),
   );
@@ -229,16 +225,13 @@ export default function GuestsTab() {
         </View>
       ) : (
       <>
-      <ChipRow>
-        {events.map((e) => (
-          <Chip
-            key={e.id}
-            label={e.title}
-            selected={e.id === eventId}
-            onPress={() => setEventId(e.id)}
-          />
-        ))}
-      </ChipRow>
+      <View style={styles.eventNote}>
+        <Text variant="caption" tone={event ? 'muted' : 'danger'}>
+          {event
+            ? `Смена: ${event.title} · ${formatEventDate(new Date(event.date))}`
+            : 'Ближайшей вечеринки нет'}
+        </Text>
+      </View>
 
       <View style={styles.list}>
         {rows.length === 0 ? (
@@ -347,6 +340,10 @@ export default function GuestsTab() {
 }
 
 const styles = StyleSheet.create({
+  eventNote: {
+    paddingHorizontal: spacing.xl,
+    paddingBottom: spacing.md,
+  },
   header: {
     paddingHorizontal: spacing.lg,
     gap: spacing.xs,
