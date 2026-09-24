@@ -2,11 +2,17 @@ import jwt from 'jsonwebtoken';
 
 import { env } from '../env.js';
 import { unauthorized } from '../lib/http-error.js';
-import type { UserRole } from '../lib/permissions.js';
 
+/**
+ * Содержимое токена — только кто это.
+ *
+ * Роли внутри нет намеренно: она меняется, а токен живёт неделями.
+ * С ролью внутри уволенный сотрудник продолжал бы пропускать людей
+ * до истечения срока, а вставший на смену — ждать нового входа.
+ * Роль определяется на каждом запросе по базе, см. auth/guard.ts.
+ */
 export interface TokenPayload {
   sub: string;
-  role: UserRole;
 }
 
 export function signToken(payload: TokenPayload): string {
@@ -20,7 +26,7 @@ export function verifyToken(token: string): TokenPayload {
     const decoded = jwt.verify(token, env.JWT_SECRET);
     if (typeof decoded === 'string' || !decoded.sub) throw new Error('bad payload');
 
-    return { sub: String(decoded.sub), role: (decoded as TokenPayload).role };
+    return { sub: String(decoded.sub) };
   } catch {
     // Причину наружу не отдаём: истёк токен или подделан — для
     // отвечающей стороны это одно и то же, а подсказки помогают атакующему.

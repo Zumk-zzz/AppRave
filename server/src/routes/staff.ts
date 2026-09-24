@@ -2,12 +2,12 @@ import { Prisma } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
-import { readAuth, requirePermission, requireUser } from '../auth/guard.js';
+import { readAuth, requirePermission, requireStaff, requireUser } from '../auth/guard.js';
 import { db } from '../db.js';
 import { badRequest, conflict, forbidden, notFound } from '../lib/http-error.js';
 import { parseContact } from '../lib/contact.js';
 import { allocateMemberNo } from '../lib/ids.js';
-import { ASSIGNABLE_ROLES, can, canAny, type UserRole } from '../lib/permissions.js';
+import { ASSIGNABLE_ROLES, canNow, type Permission, type UserRole } from '../lib/permissions.js';
 import { leftOf, settleStatus, toLineDtos, toOrderDto } from './orders.js';
 
 /** Контакт сотрудника: телефон или почта, роль выдаётся аккаунту. */
@@ -37,8 +37,15 @@ export async function staffRoutes(app: FastifyInstance) {
 
   app.get('/staff/scan/:number', async (req) => {
     const auth = requireUser(req);
-    if (!can(auth.role, 'scan:entry') && !can(auth.role, 'scan:bar')) {
-      throw forbidden('Сканирование недоступно для вашей роли');
+    const may = (permission: Permission) => canNow(auth.staffRole, !!auth.shiftId, permission);
+
+    if (!may('scan:entry') && !may('scan:bar')) {
+      // Сотруднику без смены говорим прямо, чего не хватает
+      throw forbidden(
+        auth.staffRole
+          ? 'Откройте смену: сканировать можно только на смене'
+          : 'Сканирование недоступно для вашей роли',
+      );
     }
 
     const { number } = z.object({ number: z.string() }).parse(req.params);
@@ -60,8 +67,8 @@ export async function staffRoutes(app: FastifyInstance) {
         ? { id: ban.id, reason: ban.reason, name: ban.name, since: ban.createdAt.toISOString() }
         : null,
       allowed: {
-        entry: can(auth.role, 'scan:entry'),
-        bar: can(auth.role, 'scan:bar'),
+        entry: may('scan:entry'),
+        bar: may('scan:bar'),
       },
     };
   });
@@ -165,8 +172,16 @@ export async function staffRoutes(app: FastifyInstance) {
     return shift ? toShiftDto(shift) : null;
   });
 
+  /**
+   * Открыть смену.
+   *
+   * Открытая смена и есть «я сейчас работаю»: от неё зависит, что человек
+   * может, и она же запрещает ему покупать. Отдельного переключателя
+   * в приложении нет — иначе он разошёлся бы со сменой, и было бы непонятно,
+   * кто на самом деле на входе.
+   */
   app.post('/staff/shift/open', async (req) => {
-    const auth = requireUser(req);
+    const auth = requireStaff(req);
 
     const open = await db.shift.findFirst({ where: { userId: auth.sub, closedAt: null } });
     if (open) throw conflict('Смена уже открыта', 'shift_open');
@@ -204,6 +219,45 @@ export async function staffRoutes(app: FastifyInstance) {
     };
   });
 
+  /**
+   * Смены команды: кто сейчас работает и кто работал раньше.
+   *
+   * Управляющему нужно не открывать смены, а видеть их: кто на входе
+   * прямо сейчас, кто ушёл, и что каждый успел за ночь. Открытые
+   * идут первыми — это то, на что смотрят в первую очередь.
+   */
+  app.get('/staff/shifts', async (req) => {
+    requirePermission(req, 'orders:read');
+    const { limit } = z
+      .object({ limit: z.coerce.number().int().min(1).max(200).default(50) })
+      .parse(req.query);
+
+    const shifts = await db.shift.findMany({
+      // Открытые первыми: в Postgres NULL при обычной сортировке уходят
+      // в конец, а смотрят в первую очередь именно на тех, кто в зале
+      orderBy: [{ closedAt: { sort: 'asc', nulls: 'first' } }, { openedAt: 'desc' }],
+      take: limit,
+      include: { user: { select: { name: true, role: true } } },
+    });
+
+    // Сколько действий в каждой смене — одним запросом, а не по одному
+    // на смену: список открывают часто, и десяток лишних запросов здесь
+    // превратился бы в заметную задержку
+    const counts = await db.staffAction.groupBy({
+      by: ['shiftId'],
+      where: { shiftId: { in: shifts.map((s) => s.id) } },
+      _count: true,
+    });
+
+    const byShift = new Map(counts.map((c) => [c.shiftId, c._count]));
+
+    return shifts.map((shift) => ({
+      ...toShiftDto(shift),
+      staff: { name: shift.user.name, role: shift.user.role },
+      actions: byShift.get(shift.id) ?? 0,
+    }));
+  });
+
   // --- Журнал ---
 
   /** Журнал действий. Сотрудник видит свои, управляющий — все. */
@@ -212,7 +266,7 @@ export async function staffRoutes(app: FastifyInstance) {
     const { limit } = z.object({ limit: z.coerce.number().int().min(1).max(200).default(50) })
       .parse(req.query);
 
-    const seesAll = can(auth.role, 'orders:read');
+    const seesAll = canNow(auth.staffRole, !!auth.shiftId, 'orders:read');
 
     const actions = await db.staffAction.findMany({
       where: seesAll ? {} : { actorId: auth.sub },
@@ -374,7 +428,9 @@ export async function staffRoutes(app: FastifyInstance) {
    */
   app.get('/staff/orders', async (req) => {
     const auth = requireUser(req);
-    if (!canAny(auth.role, ['scan:entry', 'scan:bar', 'orders:read'])) {
+    const may = (permission: Permission) => canNow(auth.staffRole, !!auth.shiftId, permission);
+
+    if (!may('scan:entry') && !may('scan:bar') && !may('orders:read')) {
       throw forbidden('Список заказов недоступен для вашей роли');
     }
 
@@ -393,7 +449,7 @@ export async function staffRoutes(app: FastifyInstance) {
     // Контакт гостя видит тот, кому он нужен по работе: фейсер вносит
     // по нему отказ, управляющий разбирает спорную ситуацию. Бармену
     // для выдачи напитка достаточно имени.
-    const seesContact = canAny(auth.role, ['scan:entry', 'orders:read']);
+    const seesContact = may('scan:entry') || may('orders:read');
 
     return orders.map((o) => ({
       ...toOrderDto(o),

@@ -53,6 +53,12 @@ const doorman = await login(PHONES.doorman);
 const manager = await login(PHONES.manager);
 const guest = await login(PHONES.guest);
 
+// Прошлый прогон мог оставить смены открытыми, а от смены зависят права:
+// без уборки набор проверял бы не то, что написано в его же названиях
+for (const token of [bartender.token, doorman.token, manager.token, admin.token]) {
+  await api('/staff/shift/close', { method: 'POST', token, body: {} });
+}
+
 check('бармен получил свою роль при входе', bartender.user.role === 'bartender', bartender.user.role);
 check('фейсер получил свою роль', doorman.user.role === 'doorman', doorman.user.role);
 check('менеджер получил свою роль', manager.user.role === 'manager', manager.user.role);
@@ -63,9 +69,17 @@ const events = (await api('/events')).body;
 const ev = events.find((e) => e.tickets.some((t) => t.available > 0));
 const tt = ev.tickets.find((t) => t.available > 0);
 
-for (const [who, token] of [['бармен', bartender.token], ['фейсер', doorman.token], ['менеджер', manager.token], ['админ', admin.token]]) {
+// Права даёт не должность, а открытая смена: пока сотрудник не встал
+// на смену, он для системы обычный гость и покупает наравне со всеми
+const staff = [['бармен', bartender.token], ['фейсер', doorman.token], ['менеджер', manager.token], ['админ', admin.token]];
+
+const beforeShift = await api(`/staff/scan/${'ORD-NONE'}`, { token: doorman.token });
+check('вне смены сканер недоступен', beforeShift.status === 403, `статус ${beforeShift.status}`);
+
+for (const [who, token] of staff) {
+  await api('/staff/shift/open', { method: 'POST', token });
   const r = await api('/orders', { method: 'POST', token, key: uid(), body: { eventId: ev.id, tickets: [{ ticketTypeId: tt.id, qty: 1 }] } });
-  check(`${who} не может покупать`, r.status === 403, `статус ${r.status}`);
+  check(`${who} на смене не может покупать`, r.status === 403, `статус ${r.status}`);
 }
 
 const b1 = await api('/staff/members', { method: 'POST', token: bartender.token, body: { contact: '+79009998877', role: 'doorman' } });
@@ -135,10 +149,21 @@ const issue3 = await api(`/staff/scan/${num}/issue`, { method: 'POST', token: ba
 check('когда всё выдано — 409', issue3.status === 409, `статус ${issue3.status}`);
 
 console.log('\n=== Смены ===');
-const open = await api('/staff/shift/open', { method: 'POST', token: bartender.token });
+const open = await api('/staff/shift', { token: bartender.token });
 check('смена открыта', open.status === 200 && !!open.body?.openedAt);
 const dup = await api('/staff/shift/open', { method: 'POST', token: bartender.token });
 check('вторая смена не открывается', dup.status === 409, `статус ${dup.status}`);
+
+const overview = await api('/staff/shifts', { token: manager.token });
+check('управляющий видит смены команды', overview.status === 200 && overview.body.length > 0, `${overview.body?.length}`);
+check('в смене видно, кто её открыл', !!overview.body[0]?.staff?.name, JSON.stringify(overview.body[0]?.staff));
+check('открытые смены идут первыми', overview.body[0]?.closedAt === null);
+
+const forBartender = await api('/staff/shifts', { token: bartender.token });
+check('бармену чужие смены закрыты', forBartender.status === 403, `статус ${forBartender.status}`);
+
+const guestShift = await api('/staff/shift/open', { method: 'POST', token: guest.token });
+check('гость смену не открывает', guestShift.status === 403, `статус ${guestShift.status}`);
 const close = await api('/staff/shift/close', { method: 'POST', token: bartender.token, body: { note: 'всё сошлось' } });
 check('смена закрыта', close.status === 200 && !!close.body?.closedAt);
 
@@ -209,6 +234,7 @@ check('список заказов отдаётся фейсеру', gl.status =
 check('в списке есть имя и контакт', !!gl.body[0]?.guest?.name && !!gl.body[0]?.guest?.contact);
 check('в списке есть состав заказа', Array.isArray(gl.body[0]?.lines) && !!gl.body[0].lines[0]?.id);
 
+await api('/staff/shift/open', { method: 'POST', token: bartender.token });
 const bq = await api(`/staff/orders?eventId=${ev.id}`, { token: bartender.token });
 check('список заказов отдаётся бармену', bq.status === 200, `${bq.body?.length} заказов`);
 check('бармен не видит контакт гостя', bq.body[0]?.guest?.contact === null, JSON.stringify(bq.body[0]?.guest));
@@ -222,6 +248,10 @@ check('админ не может разжаловать себя', selfRevoke.s
 
 const members = await api('/staff/members', { token: admin.token });
 check('список сотрудников виден админу', members.status === 200 && members.body.length >= 3, `${members.body?.length}`);
+
+for (const token of [bartender.token, doorman.token, manager.token, admin.token]) {
+  await api('/staff/shift/close', { method: 'POST', token, body: {} });
+}
 
 console.log(`\n${failures === 0 ? 'ВСЕ ПРОВЕРКИ ПРОШЛИ' : `ПРОВАЛЕНО: ${failures}`}\n`);
 process.exit(failures === 0 ? 0 : 1);

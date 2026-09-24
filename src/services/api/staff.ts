@@ -59,6 +59,14 @@ export const apiStaffService: StaffService = {
     await request('/staff/shift/close', { method: 'POST', body: { note } });
   },
 
+  async teamShifts(limit = 50) {
+    const shifts = await request<(ApiShift & { staff: { name: string; role: UserRole }; actions: number })[]>(
+      `/staff/shifts?limit=${limit}`,
+    );
+
+    return shifts.map((s) => ({ ...mapShift(s), staff: s.staff, actions: s.actions }));
+  },
+
   async actions(limit = 100) {
     const actions = await request<ApiAction[]>(`/staff/actions?limit=${limit}`);
     return actions.map(mapAction);

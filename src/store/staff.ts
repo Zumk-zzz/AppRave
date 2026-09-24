@@ -7,11 +7,12 @@ import {
   type StaffAction,
   type StaffActionKind,
   type StaffMember,
+  type TeamShift,
   type User,
   type UserRole,
 } from '@/src/services';
 
-export type { BanEntry, Shift, StaffAction, StaffActionKind, StaffMember };
+export type { BanEntry, Shift, StaffAction, StaffActionKind, StaffMember, TeamShift };
 
 /**
  * Смена, журнал, сотрудники и стоп-лист на экране.
@@ -24,6 +25,8 @@ export type { BanEntry, Shift, StaffAction, StaffActionKind, StaffMember };
 interface StaffState {
   /** Моя открытая смена */
   shift: Shift | null;
+  /** Смены команды: их видит тот, кто за сменами следит, а не стоит на них */
+  team: TeamShift[];
   actions: StaffAction[];
   members: StaffMember[];
   bans: BanEntry[];
@@ -50,6 +53,7 @@ interface StaffState {
 
 export const useStaffStore = create<StaffState>((set, get) => ({
   shift: null,
+  team: [],
   actions: [],
   members: [],
   bans: [],
@@ -57,20 +61,21 @@ export const useStaffStore = create<StaffState>((set, get) => ({
 
   async load(user) {
     if (!user) {
-      set({ shift: null, actions: [], members: [], bans: [], loaded: true });
+      set({ shift: null, team: [], actions: [], members: [], bans: [], loaded: true });
       return;
     }
 
     // Части читаются независимо: у бармена нет доступа к списку
     // сотрудников, но смена и журнал ему нужны
-    const [shift, actions, members, bans] = await Promise.all([
+    const [shift, team, actions, members, bans] = await Promise.all([
       staffService.currentShift(user).catch(() => null),
+      staffService.teamShifts().catch(() => []),
       staffService.actions().catch(() => []),
       staffService.members().catch(() => []),
       staffService.bans(true).catch(() => []),
     ]);
 
-    set({ shift, actions, members, bans, loaded: true });
+    set({ shift, team, actions, members, bans, loaded: true });
   },
 
   async openShift(user) {
@@ -109,7 +114,7 @@ export const useStaffStore = create<StaffState>((set, get) => ({
   },
 
   clear() {
-    set({ shift: null, actions: [], members: [], bans: [], loaded: false });
+    set({ shift: null, team: [], actions: [], members: [], bans: [], loaded: false });
   },
 }));
 

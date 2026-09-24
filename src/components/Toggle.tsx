@@ -8,12 +8,15 @@ export interface ToggleProps {
   label: string;
   hint?: string;
   value: boolean;
+  /** Пока идёт переключение: второе нажатие подряд ничего не даст */
+  disabled?: boolean;
   onChange: (next: boolean) => void;
 }
 
 /** Строка с переключателем. Нажатие на всю строку, а не только на сам тумблер. */
-export function Toggle({ label, hint, value, onChange }: ToggleProps) {
+export function Toggle({ label, hint, value, disabled, onChange }: ToggleProps) {
   const handle = (next: boolean) => {
+    if (disabled) return;
     Haptics.selectionAsync();
     onChange(next);
   };
@@ -21,7 +24,7 @@ export function Toggle({ label, hint, value, onChange }: ToggleProps) {
   return (
     <Pressable
       accessibilityRole="switch"
-      accessibilityState={{ checked: value }}
+      accessibilityState={{ checked: value, disabled }}
       onPress={() => handle(!value)}
       style={styles.root}
     >

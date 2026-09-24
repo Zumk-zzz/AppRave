@@ -84,6 +84,13 @@ await api('/staff/members', {
 const bartender = await login(bartenderContact);
 check('бармен вошёл', bartender?.user?.role === 'bartender', bartender?.user?.role);
 
+// Сканировать можно только на смене: открываем её, как это делает
+// сотрудник, приходя на работу
+for (const token of [doorman.token, bartender.token]) {
+  await api('/staff/shift/close', { method: 'POST', token, body: {} });
+  await api('/staff/shift/open', { method: 'POST', token });
+}
+
 const events = await api('/events');
 const event = events.body.find((e) => e.tickets.some((t) => t.available > 1));
 check('есть событие с билетами', !!event, event?.title);
@@ -195,6 +202,10 @@ check(
 
 const closed = await api(`/orders/${order.id}/cancel`, { method: 'POST', token: guest.token });
 check('использованный заказ не отменить', closed.status === 409, `статус ${closed.status}`);
+
+for (const token of [doorman.token, bartender.token]) {
+  await api('/staff/shift/close', { method: 'POST', token, body: {} });
+}
 
 console.log(`\n${failures === 0 ? 'ВСЕ ПРОВЕРКИ ПРОШЛИ' : `ПРОВАЛЕНО: ${failures}`}\n`);
 process.exit(failures === 0 ? 0 : 1);

@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, View } from 'react-native';
 
 import { Badge, Button, Card, Screen, SectionHeader, Sheet, Text, Toggle } from '@/src/components';
 import { ContactsCard } from '@/src/features/profile/ContactsCard';
@@ -12,6 +13,7 @@ import { ROLE_DESCRIPTION, ROLE_LABEL } from '@/src/lib/permissions';
 import { formatContact } from '@/src/lib/contact';
 import { useAuthStore, useCan, useStaffRole } from '@/src/store/auth';
 import { useOrdersStore } from '@/src/store/orders';
+import { useStaffStore } from '@/src/store/staff';
 import { colors, radius, spacing } from '@/src/theme';
 
 export default function ProfileTab() {
@@ -23,14 +25,34 @@ export default function ProfileTab() {
   const canManageCatalog = useCan('catalog:write');
   const canManageStaff = useCan('staff:manage');
   const staffRole = useStaffRole();
-  const atWork = useAuthStore((s) => s.atWork);
-  const setAtWork = useAuthStore((s) => s.setAtWork);
+  const shift = useStaffStore((s) => s.shift);
+  const openShift = useStaffStore((s) => s.openShift);
+  const closeShift = useStaffStore((s) => s.closeShift);
+  const [switching, setSwitching] = useState(false);
+  const onShift = !!shift;
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   if (!user) return null;
 
   const contact = user.phone ? formatContact(user.phone) : (user.email ?? '');
   const initial = user.name.trim().charAt(0).toUpperCase() || 'Г';
+
+  const toggleShift = async (next: boolean) => {
+    if (!user || switching) return;
+    setSwitching(true);
+
+    try {
+      // Закрытие смены без заметки: подробности пишут на экране смены,
+      // здесь важно быстро переключиться между работой и отдыхом
+      await (next ? openShift(user) : closeShift(user));
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert('Не получилось', e instanceof Error ? e.message : 'Попробуйте ещё раз');
+    } finally {
+      setSwitching(false);
+    }
+  };
 
   return (
     <Screen scroll>
@@ -50,7 +72,7 @@ export default function ProfileTab() {
           </Text>
         </View>
 
-        {atWork && staffRole ? (
+        {onShift && staffRole ? (
           <Badge label={ROLE_LABEL[staffRole]} tone="accent" />
         ) : (
           <Badge label={TIER_LABEL[user.tier]} tone={TIER_TONE[user.tier]} />
@@ -66,19 +88,21 @@ export default function ProfileTab() {
         </View>
       )}
 
-      {/* Переключатель разделяет «я на смене» и «я пришёл отдыхать».
-          Без него сотрудник не смог бы ничего купить в свой выходной. */}
+      {/* Смена и есть «я работаю»: от неё зависят права, и она же
+          не даёт покупать. Второй переключатель рядом с ней разошёлся бы
+          с ней на первой же забытой смене. */}
       {staffRole && (
         <Card style={styles.roleCard}>
           <Toggle
-            label="Рабочий режим"
+            label="Я на смене"
             hint={
-              atWork
-                ? ROLE_DESCRIPTION[staffRole]
-                : `Выключен — вы обычный гость. Включите, когда выйдете на смену как ${ROLE_LABEL[staffRole].toLowerCase()}.`
+              onShift
+                ? `${ROLE_DESCRIPTION[staffRole]}. Пока смена открыта, покупать нельзя.`
+                : `Сейчас вы в приложении как гость. Откройте смену, чтобы работать как ${ROLE_LABEL[staffRole].toLowerCase()}.`
             }
-            value={atWork}
-            onChange={(next) => void setAtWork(next)}
+            value={onShift}
+            disabled={switching}
+            onChange={(next) => void toggleShift(next)}
           />
         </Card>
       )}
@@ -108,7 +132,7 @@ export default function ProfileTab() {
           <View style={styles.flex}>
             <Text variant="bodyStrong">Смена и журнал</Text>
             <Text variant="caption" tone="muted">
-              Открыть смену, посмотреть свои действия
+              {onShift ? 'Смена открыта · журнал действий' : 'Итоги и история смен'}
             </Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />

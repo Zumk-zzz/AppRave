@@ -1,28 +1,18 @@
 import * as SecureStore from 'expo-secure-store';
 import { create } from 'zustand';
 
-import { can, effectiveRole, type Permission, type UserRole } from '@/src/lib/permissions';
+import { canNow, effectiveRole, type Permission, type UserRole } from '@/src/lib/permissions';
 import { authService, setActor, setToken, type User } from '@/src/services';
 import { useOrdersStore } from './orders';
 import { useStaffStore } from './staff';
 
 const SESSION_KEY = 'apprave.session';
-const WORK_MODE_KEY = 'apprave.work-mode';
 
 export type AuthStatus = 'loading' | 'guest' | 'authed';
 
 interface AuthState {
   status: AuthStatus;
   user: User | null;
-  /**
-   * Рабочий режим: сотрудник на смене.
-   *
-   * Выключен — человек ведёт себя как обычный гость и может покупать.
-   * Именно это позволяет персоналу приходить в клуб отдыхать, не заводя
-   * второй аккаунт.
-   */
-  atWork: boolean;
-  setAtWork: (next: boolean) => Promise<void>;
   /** Прочитать сессию с устройства. Вызывается один раз при старте. */
   restore: () => Promise<void>;
   signIn: (contact: string, code: string) => Promise<void>;
@@ -36,31 +26,14 @@ interface AuthState {
 export const useAuthStore = create<AuthState>((set, get) => ({
   status: 'loading',
   user: null,
-  atWork: false,
-
-  async setAtWork(next) {
-    set({ atWork: next });
-    try {
-      await SecureStore.setItemAsync(WORK_MODE_KEY, next ? '1' : '0');
-    } catch {
-      // Режим не сохранился — после перезапуска сотрудник включит заново
-    }
-  },
 
   async restore() {
     try {
       const raw = await SecureStore.getItemAsync(SESSION_KEY);
       if (raw) {
         const saved = migrateUser(JSON.parse(raw) as User & { role?: string });
-        const mode = await SecureStore.getItemAsync(WORK_MODE_KEY).catch(() => null);
-
         setActor(saved);
-        set({
-          user: saved,
-          // Режим имеет смысл только у сотрудника: у гостя он всегда выключен
-          atWork: !!saved.staffRole && mode === '1',
-          status: 'authed',
-        });
+        set({ user: saved, status: 'authed' });
         return;
       }
     } catch {
@@ -68,7 +41,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // просто показываем экран авторизации.
     }
     setActor(null);
-    set({ user: null, atWork: false, status: 'guest' });
+    set({ user: null, status: 'guest' });
   },
 
   async signIn(contact, code) {
@@ -78,9 +51,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // Автономные сервисы узнают действующего сотрудника отсюда: на
     // сервере его роль приходит в токене, без сервера — взять неоткуда
     setActor(user);
-    // Вход всегда начинается в гостевом режиме: сотрудник включает
-    // рабочий сам, когда выходит на смену.
-    set({ user, atWork: false, status: 'authed' });
+    set({ user, status: 'authed' });
   },
 
   async linkContact(contact, code) {
@@ -97,7 +68,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   async signOut() {
     try {
       await SecureStore.deleteItemAsync(SESSION_KEY);
-      await SecureStore.deleteItemAsync(WORK_MODE_KEY);
       // Токен обязательно: иначе следующий человек на этом телефоне
       // продолжит работать под чужим аккаунтом
       await setToken(null);
@@ -108,7 +78,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     setActor(null);
     useOrdersStore.getState().clear();
     useStaffStore.getState().clear();
-    set({ user: null, atWork: false, status: 'guest' });
+    set({ user: null, status: 'guest' });
   },
 
   patchUser(patch) {
@@ -146,12 +116,9 @@ async function persist(user: User) {
   }
 }
 
-/**
- * Роль, в которой человек действует прямо сейчас.
- * Должность учитывается только в рабочем режиме.
- */
+/** Роль для показа: должность либо «гость». */
 export function useRole(): UserRole {
-  return useAuthStore((s) => effectiveRole(s.user?.staffRole, s.atWork));
+  return useAuthStore((s) => effectiveRole(s.user?.staffRole));
 }
 
 /** Есть ли у человека должность — независимо от того, на смене он или нет. */
@@ -159,8 +126,15 @@ export function useStaffRole() {
   return useAuthStore((s) => s.user?.staffRole);
 }
 
-export function useAtWork(): boolean {
-  return useAuthStore((s) => s.atWork);
+/**
+ * На смене ли человек прямо сейчас.
+ *
+ * Смена — и есть «я работаю»: отдельного переключателя в приложении нет.
+ * Два признака одного и того же неминуемо разошлись бы, и стало бы
+ * непонятно, кто на самом деле стоит на входе.
+ */
+export function useOnShift(): boolean {
+  return useStaffStore((s) => !!s.shift);
 }
 
 /**
@@ -174,5 +148,8 @@ export function useAtWork(): boolean {
  * запроса.
  */
 export function useCan(permission: Permission): boolean {
-  return useAuthStore((s) => can(effectiveRole(s.user?.staffRole, s.atWork), permission));
+  const staffRole = useAuthStore((s) => s.user?.staffRole);
+  const onShift = useStaffStore((s) => !!s.shift);
+
+  return canNow(staffRole, onShift, permission);
 }

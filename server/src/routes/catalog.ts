@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
 import { readAuth } from '../auth/guard.js';
+import { can, effectiveRole } from '../lib/permissions.js';
 import { db } from '../db.js';
 import { notFound } from '../lib/http-error.js';
 
@@ -11,11 +12,12 @@ export async function catalogRoutes(app: FastifyInstance) {
    * администратору — вообще все, включая черновики.
    */
   app.get('/events', async (req) => {
-    const auth = readAuth(req);
-    const isAdmin = auth?.role === 'admin';
+    // Черновики и отменённые видит тот, кто их правит. Смена тут ни при
+    // чём: афишу готовят днём, а не в зале.
+    const mayEdit = can(effectiveRole(readAuth(req)?.staffRole), 'catalog:write');
 
     const events = await db.event.findMany({
-      where: isAdmin ? {} : { status: 'published' },
+      where: mayEdit ? {} : { status: 'published' },
       orderBy: { startsAt: 'asc' },
       include: { ticketTypes: { orderBy: { priceKopecks: 'asc' } } },
     });
@@ -25,7 +27,7 @@ export async function catalogRoutes(app: FastifyInstance) {
 
   app.get('/events/:id', async (req) => {
     const { id } = z.object({ id: z.string() }).parse(req.params);
-    const auth = readAuth(req);
+    const mayEdit = can(effectiveRole(readAuth(req)?.staffRole), 'catalog:write');
 
     const event = await db.event.findUnique({
       where: { id },
@@ -33,7 +35,7 @@ export async function catalogRoutes(app: FastifyInstance) {
     });
 
     if (!event) throw notFound('Событие не найдено');
-    if (event.status !== 'published' && auth?.role !== 'admin') {
+    if (event.status !== 'published' && !mayEdit) {
       // Черновик для гостя не существует, а не «запрещён»: 403 подсказал бы,
       // что такое событие есть.
       throw notFound('Событие не найдено');
@@ -44,10 +46,11 @@ export async function catalogRoutes(app: FastifyInstance) {
 
   /** Меню бара. Снятые с продажи позиции гостю не показываем вовсе. */
   app.get('/bar/menu', async (req) => {
-    const isAdmin = readAuth(req)?.role === 'admin';
+    // Снятые с продажи позиции нужны тому, кто правит меню
+    const mayEdit = can(effectiveRole(readAuth(req)?.staffRole), 'catalog:write');
 
     const items = await db.barItem.findMany({
-      where: isAdmin ? {} : { available: true },
+      where: mayEdit ? {} : { available: true },
       orderBy: [{ category: 'asc' }, { name: 'asc' }],
     });
 

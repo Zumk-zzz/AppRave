@@ -8,8 +8,14 @@ import { Alert, Pressable, StyleSheet, View } from 'react-native';
 
 import { Badge, Button, Card, Field, Screen, SectionHeader, Sheet, Text } from '@/src/components';
 import { ROLE_LABEL } from '@/src/lib/permissions';
+import { pluralWithCount } from '@/src/lib/format';
 import { useAuthStore, useCan, useRole } from '@/src/store/auth';
-import { ACTION_LABEL, useStaffStore, type StaffAction } from '@/src/store/staff';
+import {
+  ACTION_LABEL,
+  useStaffStore,
+  type StaffAction,
+  type TeamShift,
+} from '@/src/store/staff';
 import { colors, radius, spacing } from '@/src/theme';
 
 export default function ShiftScreen() {
@@ -19,6 +25,7 @@ export default function ShiftScreen() {
   const role = useRole();
 
   const current = useStaffStore((s) => s.shift);
+  const team = useStaffStore((s) => s.team);
   const actions = useStaffStore((s) => s.actions);
   const openShift = useStaffStore((s) => s.openShift);
   const closeShift = useStaffStore((s) => s.closeShift);
@@ -34,6 +41,11 @@ export default function ShiftScreen() {
       void loadStaff(user);
     }, [loadStaff, user]),
   );
+
+  // Смену открывает тот, кто работает в зале. Управляющий правит афишу
+  // и днём, и без смены — ему она нужна только как наблюдение.
+  const canStand = !!user?.staffRole;
+  const onShiftNow = useMemo(() => team.filter((t) => !t.closedAt), [team]);
 
   /**
    * Что показывать в журнале.
@@ -98,47 +110,72 @@ export default function ShiftScreen() {
         </View>
       </View>
 
-      <Card style={styles.shiftCard}>
-        {current ? (
-          <>
-            <View style={styles.shiftHead}>
-              <View style={styles.flex}>
-                <Text variant="bodyStrong">Смена открыта</Text>
-                <Text variant="caption" tone="muted">
-                  с {format(new Date(current.openedAt), 'd MMMM, HH:mm', { locale: ru })}
-                </Text>
+      {canStand && (
+        <Card style={styles.shiftCard}>
+          {current ? (
+            <>
+              <View style={styles.shiftHead}>
+                <View style={styles.flex}>
+                  <Text variant="bodyStrong">Смена открыта</Text>
+                  <Text variant="caption" tone="muted">
+                    с {format(new Date(current.openedAt), 'd MMMM, HH:mm', { locale: ru })}
+                  </Text>
+                </View>
+                <Badge label="В работе" tone="success" />
               </View>
-              <Badge label="В работе" tone="success" />
-            </View>
 
-            {summary.size > 0 && (
-              <View style={styles.summary}>
-                {[...summary.entries()].map(([kind, count]) => (
-                  <View key={kind} style={styles.summaryRow}>
-                    <Text variant="caption" tone="muted" style={styles.flex}>
-                      {ACTION_LABEL[kind as keyof typeof ACTION_LABEL]}
-                    </Text>
-                    <Text variant="caption" tone="accent">
-                      {count}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            )}
+              {summary.size > 0 && (
+                <View style={styles.summary}>
+                  {[...summary.entries()].map(([kind, count]) => (
+                    <View key={kind} style={styles.summaryRow}>
+                      <Text variant="caption" tone="muted" style={styles.flex}>
+                        {ACTION_LABEL[kind as keyof typeof ACTION_LABEL]}
+                      </Text>
+                      <Text variant="caption" tone="accent">
+                        {count}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              )}
 
-            <Button label="Закрыть смену" variant="outline" fullWidth onPress={() => setClosing(true)} />
-          </>
-        ) : (
-          <>
-            <Text variant="bodyStrong">Смена не открыта</Text>
-            <Text variant="caption" tone="muted">
-              Действия всё равно записываются, но без привязки к смене — итоги
-              за ночь тогда не сойдутся.
+              <Button label="Закрыть смену" variant="outline" fullWidth onPress={() => setClosing(true)} />
+            </>
+          ) : (
+            <>
+              <Text variant="bodyStrong">Смена не открыта</Text>
+              <Text variant="caption" tone="muted">
+                Действия всё равно записываются, но без привязки к смене — итоги
+                за ночь тогда не сойдутся.
+              </Text>
+              <Button label="Открыть смену" size="lg" fullWidth onPress={handleOpen} />
+            </>
+          )}
+        </Card>
+      )}
+
+      {/* Управляющему смену открывать незачем: ему нужно видеть чужие.
+          Кто сейчас в зале — первое, на что он смотрит. */}
+      {seesEveryone && (
+        <>
+          <SectionHeader
+            title="Смены команды"
+            kicker={onShiftNow.length > 0 ? `Сейчас в зале: ${onShiftNow.length}` : 'Сейчас никого'}
+          />
+
+          {team.length === 0 ? (
+            <Text variant="caption" tone="faint" style={styles.empty}>
+              Смен пока не было.
             </Text>
-            <Button label="Открыть смену" size="lg" fullWidth onPress={handleOpen} />
-          </>
-        )}
-      </Card>
+          ) : (
+            <View style={styles.log}>
+              {team.map((shift) => (
+                <ShiftRow key={shift.id} shift={shift} />
+              ))}
+            </View>
+          )}
+        </>
+      )}
 
       <SectionHeader
         title="Журнал"
@@ -174,6 +211,44 @@ export default function ShiftScreen() {
         </View>
       </Sheet>
     </Screen>
+  );
+}
+
+/**
+ * Смена сотрудника в списке управляющего.
+ *
+ * Открытые видно сразу по метке: когда в клубе что-то происходит,
+ * первый вопрос — кто сейчас на входе.
+ */
+function ShiftRow({ shift }: { shift: TeamShift }) {
+  const open = !shift.closedAt;
+
+  return (
+    <View style={styles.teamRow}>
+      <View style={styles.flex}>
+        <Text variant="body">{shift.staff.name}</Text>
+        <Text variant="caption" tone="faint">
+          {ROLE_LABEL[shift.staff.role]} ·{' '}
+          {format(new Date(shift.openedAt), 'd MMM, HH:mm', { locale: ru })}
+          {shift.closedAt ? ` — ${format(new Date(shift.closedAt), 'HH:mm', { locale: ru })}` : ''}
+        </Text>
+        {shift.note && (
+          <Text variant="caption" tone="muted">
+            {shift.note}
+          </Text>
+        )}
+      </View>
+
+      <View style={styles.teamMeta}>
+        {open ? (
+          <Badge label="В зале" tone="success" />
+        ) : (
+          <Text variant="caption" tone="faint">
+            {pluralWithCount(shift.actions, 'действие', 'действия', 'действий')}
+          </Text>
+        )}
+      </View>
+    </View>
   );
 }
 
@@ -214,6 +289,17 @@ function pluralActions(n: number): string {
 }
 
 const styles = StyleSheet.create({
+  teamRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  teamMeta: {
+    alignItems: 'flex-end',
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -85,7 +85,7 @@ export async function authRoutes(app: FastifyInstance) {
           },
         });
 
-    return { token: signToken({ sub: user.id, role: user.role }), user: publicUser(user) };
+    return { token: signToken({ sub: user.id }), user: publicUser(user) };
   });
 
   app.get('/auth/me', async (req) => {

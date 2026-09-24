@@ -2,6 +2,7 @@ import cors from '@fastify/cors';
 import Fastify from 'fastify';
 import { ZodError } from 'zod';
 
+import { resolveAuth } from './auth/guard.js';
 import { db } from './db.js';
 import { env, isProd } from './env.js';
 import { startExpirationJob } from './jobs/expire-reservations.js';
@@ -68,6 +69,11 @@ app.setErrorHandler((error, req, reply) => {
   // фрагменты запроса к базе и имена таблиц.
   return reply.code(500).send({ error: 'Внутренняя ошибка', code: 'internal' });
 });
+
+// Кто выполняет запрос, выясняем до обработчика: роль и смена читаются
+// из базы, поэтому это асинхронно, а проверки прав в маршрутах должны
+// оставаться простыми и синхронными.
+app.addHook('preHandler', resolveAuth);
 
 app.get('/health', async () => {
   await db.$queryRaw`SELECT 1`;

@@ -399,6 +399,13 @@ export interface Shift {
   note?: string;
 }
 
+/** Смена другого сотрудника — как её видит управляющий. */
+export interface TeamShift extends Shift {
+  staff: { name: string; role: UserRole };
+  /** Сколько действий в эту смену: проходы, выдачи, правки склада */
+  actions: number;
+}
+
 export interface StaffMember {
   id: string;
   name: string;
@@ -435,6 +442,14 @@ export interface StaffService {
 
   /** Журнал: сотрудник видит свои действия, управляющий — все. */
   actions(limit?: number): Promise<StaffAction[]>;
+
+  /**
+   * Смены команды: кто в зале сейчас и кто работал раньше.
+   *
+   * Управляющему смену открывать незачем — ему нужно видеть чужие.
+   * Открытые идут первыми: на них смотрят в первую очередь.
+   */
+  teamShifts(limit?: number): Promise<TeamShift[]>;
 
   members(): Promise<StaffMember[]>;
   addMember(input: { contact: string; name: string; role: UserRole }): Promise<void>;

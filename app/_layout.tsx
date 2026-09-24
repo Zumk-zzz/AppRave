@@ -10,7 +10,7 @@ import { useEffect } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import 'react-native-reanimated';
 
-import { can, effectiveRole } from '@/src/lib/permissions';
+import { canNow } from '@/src/lib/permissions';
 import { initNotifications } from '@/src/lib/reminders';
 import { useAuthStore } from '@/src/store/auth';
 import { useCatalogStore } from '@/src/store/catalog';
@@ -36,7 +36,6 @@ export default function RootLayout() {
   const status = useAuthStore((s) => s.status);
   const restore = useAuthStore((s) => s.restore);
   const user = useAuthStore((s) => s.user);
-  const atWork = useAuthStore((s) => s.atWork);
   const loadOrders = useOrdersStore((s) => s.load);
   const loadCatalog = useCatalogStore((s) => s.load);
   const loadStaff = useStaffStore((s) => s.load);
@@ -64,14 +63,17 @@ export default function RootLayout() {
     void loadStaff(status === 'authed' ? (useAuthStore.getState().user ?? null) : null);
   }, [status, userId, loadStaff]);
 
-  const role = effectiveRole(user?.staffRole, atWork);
+  const staffRole = user?.staffRole;
+  const onShift = useStaffStore((s) => !!s.shift);
+  const may = (permission: Parameters<typeof canNow>[2]) => canNow(staffRole, onShift, permission);
+
+  const seesStock = may('catalog:write') || may('stock:write');
 
   useEffect(() => {
-    // Каталог перечитывается при смене действующей роли: сотрудник,
-    // вставший на смену, должен увидеть склад и схему зала, а гостю
-    // они не положены — сервер их ему и не отдаст.
-    void loadCatalog(can(role, 'catalog:write') || can(role, 'stock:write'));
-  }, [role, loadCatalog]);
+    // Склад и схема зала нужны только тому, кто их правит, и сервер
+    // остальным их не отдаст. Перечитываем, когда это меняется.
+    void loadCatalog(seesStock);
+  }, [seesStock, loadCatalog]);
 
   const fontsReady = fontsLoaded || fontError;
   const authReady = status !== 'loading';
@@ -93,11 +95,11 @@ export default function RootLayout() {
   // Маршруты закрываются по правам, а не по названию роли: менеджер
   // и админ попадают в управление одинаково, но раздел сотрудников
   // открыт только тому, у кого есть staff:manage.
-  const canManage = isAuthed && can(role, 'catalog:write');
-  const canBuy = isAuthed && can(role, 'purchase');
-  // Смена доступна любому, у кого есть должность, даже вне рабочего режима:
-  // иначе её нечем было бы открыть.
-  const hasPosition = isAuthed && !!user?.staffRole;
+  const canManage = isAuthed && may('catalog:write');
+  const canBuy = isAuthed && may('purchase');
+  // Экран смены доступен любому, у кого есть должность: на нём смену
+  // и открывают, так что требовать открытой смены было бы замкнутым кругом.
+  const hasPosition = isAuthed && !!staffRole;
 
   return (
     <SafeAreaProvider>

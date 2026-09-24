@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { currentActor } from './session';
 import type {
   BanEntry,
   Shift,
@@ -78,6 +79,19 @@ export const mockStaffService: StaffService = {
 
     await write(SHIFTS_KEY, shifts);
     await logMock({ kind: 'shift_closed', user, shiftId: open.id, summary: note });
+  },
+
+  async teamShifts(limit = 50) {
+    // На телефоне команда — это один человек: чужие смены взяться неоткуда
+    const actor = currentActor();
+    const shifts = await read<StoredShift>(SHIFTS_KEY);
+    const actions = await read<StaffAction>(ACTIONS_KEY);
+
+    return shifts.slice(0, limit).map((shift) => ({
+      ...shift,
+      staff: { name: actor?.name ?? 'Сотрудник', role: actor?.staffRole ?? 'guest' },
+      actions: actions.filter((a) => a.shiftId === shift.id).length,
+    }));
   },
 
   async actions(limit = 100) {

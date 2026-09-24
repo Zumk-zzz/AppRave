@@ -90,11 +90,22 @@ const noAuthTables = await api(`/events/${withStock.id}/tables`);
 check('схема зала отдаётся', noAuthTables.status === 200 && noAuthTables.body.length === 12);
 
 console.log('\n=== Защита ролей ===');
-const adminBuy = await api('/orders', {
+// Сотрудник не на смене — обычный гость: он тоже приходит отдыхать
+const offShift = await api('/orders', {
   method: 'POST', token: admin.token, key: uid(),
   body: { eventId: withStock.id, tickets: [{ ticketTypeId: withStock.tickets[0].id, qty: 1 }] },
 });
-check('админу запрещено покупать', adminBuy.status === 403, `статус ${adminBuy.status}`);
+check('вне смены админ покупает как гость', offShift.status === 201, `статус ${offShift.status}`);
+
+// А на смене — не покупает: это исказило бы выручку и позволило бы
+// выписать себе билет мимо кассы
+await api('/staff/shift/open', { method: 'POST', token: admin.token });
+const onShift = await api('/orders', {
+  method: 'POST', token: admin.token, key: uid(),
+  body: { eventId: withStock.id, tickets: [{ ticketTypeId: withStock.tickets[0].id, qty: 1 }] },
+});
+check('на смене покупать нельзя', onShift.status === 403, `статус ${onShift.status}`);
+await api('/staff/shift/close', { method: 'POST', token: admin.token, body: {} });
 
 const noToken = await api('/orders', { method: 'POST', key: uid(), body: { eventId: withStock.id } });
 check('без токена заказ отклонён', noToken.status === 401, `статус ${noToken.status}`);
