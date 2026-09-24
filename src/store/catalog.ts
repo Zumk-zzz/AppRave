@@ -71,7 +71,9 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
     // Сбой одной части не должен оставить остальные незагруженными:
     // без склада админка работает, без афиши приложение пустое.
     const [events, barMenu, tables, stock, moves] = await Promise.all([
-      eventsService.list().catch(() => get().events),
+      // Тому, кто правит каталог, нужен полный список — с черновиками
+      // и прошедшими. Остальным хватает афиши.
+      (staff ? adminService.events() : eventsService.list()).catch(() => get().events),
       barService.menu().catch(() => get().barMenu),
       staff ? adminService.tables().catch(() => get().tables) : get().tables,
       staff ? inventoryService.stock().catch(() => get().stock) : get().stock,

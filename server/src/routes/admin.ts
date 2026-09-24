@@ -36,7 +36,13 @@ const eventSchema = z.object({
   lineup: z.array(z.string().min(1)).max(50).default([]),
   description: z.string().default(''),
   cover: z.tuple([z.string().min(1), z.string().min(1)]),
-  status: z.enum(['draft', 'published', 'cancelled']).default('published'),
+  /**
+   * Состояние. При создании не указывают: новая вечеринка всегда
+   * начинается черновиком, а в афишу её выкладывают отдельным действием,
+   * когда всё заполнено. Иначе полупустая карточка попадает к гостям
+   * в ту же секунду, как её начали набирать.
+   */
+  status: z.enum(['draft', 'published', 'cancelled']).optional(),
   tickets: z.array(ticketSchema).min(1),
 });
 
@@ -72,13 +78,50 @@ const tableSchema = z.object({
 export async function adminRoutes(app: FastifyInstance) {
   // --- Афиша ---
 
+  /**
+   * Все вечеринки: черновики, афиша, прошедшие и отменённые.
+   *
+   * Отдельно от /events намеренно. Афиша — то, что покупают, и она
+   * одинакова для всех; здесь же рабочий список, в котором админ
+   * разбирает и то, что гостям видеть незачем.
+   */
+  app.get('/admin/events', async (req) => {
+    requirePermission(req, 'catalog:write');
+
+    const events = await db.event.findMany({
+      orderBy: { startsAt: 'desc' },
+      include: { ticketTypes: { orderBy: { priceKopecks: 'asc' } } },
+    });
+
+    return events.map((event) => ({
+      id: event.id,
+      title: event.title,
+      subtitle: event.subtitle,
+      date: event.startsAt.toISOString(),
+      genre: event.genre,
+      ageLimit: event.ageLimit,
+      lineup: event.lineup,
+      description: event.description,
+      cover: [event.coverFrom, event.coverTo] as [string, string],
+      status: event.status,
+      tickets: event.ticketTypes.map((t) => ({
+        id: t.id,
+        name: t.name,
+        description: t.description,
+        priceKopecks: t.priceKopecks,
+        available: Math.max(0, t.quantity - t.sold),
+        quantity: t.quantity,
+      })),
+    }));
+  });
+
   app.post('/admin/events', async (req, reply) => {
     requirePermission(req, 'catalog:write');
     const body = eventSchema.parse(req.body);
 
     const event = await db.event.create({
       data: {
-        ...toEventData(body),
+        ...toEventData(body, 'draft'),
         ticketTypes: {
           createMany: {
             data: body.tickets.map((t) => ({
@@ -114,7 +157,7 @@ export async function adminRoutes(app: FastifyInstance) {
     }
 
     await db.$transaction(async (tx) => {
-      await tx.event.update({ where: { id }, data: toEventData(body) });
+      await tx.event.update({ where: { id }, data: toEventData(body, existing.status) });
 
       await tx.ticketType.deleteMany({
         where: { eventId: id, id: { notIn: [...incoming] as string[] } },
@@ -170,20 +213,37 @@ export async function adminRoutes(app: FastifyInstance) {
     const event = await db.event.findUnique({ where: { id } });
     if (!event) throw notFound('Событие не найдено');
 
-    const orders = await db.order.count({ where: { eventId: id } });
-    if (orders > 0) {
-      // Удаление оторвало бы заказы от события, и у гостя в билете
-      // пропали бы название и дата. Отменённая вечеринка и так исчезает
-      // из афиши — в управлении она лежит на своей вкладке.
+    /**
+     * Мешает удалению не всякий заказ, а только тот, за который платили.
+     *
+     * Оплаченный, использованный или возвращённый заказ — часть денежной
+     * истории: удалить событие значит оторвать их от названия и даты,
+     * и в билете гостя останется пустота.
+     *
+     * А вот сгоревшие резервы и брошенные корзины не значат ничего:
+     * денег по ним не было и никто ничего не ждёт. Раньше считались
+     * и они — получалось, что удалить нельзя «из-за заказов», а вернуть
+     * по ним нечего. Такие уходят вместе с событием.
+     */
+    const paid = await db.order.count({ where: { eventId: id, paidAt: { not: null } } });
+
+    if (paid > 0) {
       throw conflict(
-        event.status === 'cancelled'
-          ? 'Вечеринка отменена и в афише её нет. Удалить нельзя: по ней есть заказы, и в билетах гостей пропали бы название и дата'
-          : 'По этой вечеринке есть заказы — переведите её в «Отменена»',
-        'event_has_orders',
+        `По этой вечеринке ${paid} оплаченных ${plural(paid, 'заказ', 'заказа', 'заказов')}. ` +
+          (event.status === 'cancelled'
+            ? 'Она отменена и в афише её нет — удалить нельзя, иначе в билетах гостей пропадут название и дата'
+            : 'Удалить нельзя: переведите её в «Отменена», и она уйдёт из афиши'),
+        'event_has_paid_orders',
       );
     }
 
-    await db.event.delete({ where: { id } });
+    await db.$transaction(async (tx) => {
+      // Неоплаченные заказы уходят вместе с событием: по отдельности
+      // они бессмысленны, а Prisma обрывает связь вместо удаления
+      await tx.order.deleteMany({ where: { eventId: id } });
+      await tx.event.delete({ where: { id } });
+    });
+
     return { ok: true };
   });
 
@@ -440,7 +500,17 @@ export async function adminRoutes(app: FastifyInstance) {
   });
 }
 
-function toEventData(body: z.infer<typeof eventSchema>) {
+function plural(n: number, one: string, few: string, many: string): string {
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 14) return many;
+
+  const mod10 = n % 10;
+  if (mod10 === 1) return one;
+  if (mod10 >= 2 && mod10 <= 4) return few;
+  return many;
+}
+
+function toEventData(body: z.infer<typeof eventSchema>, fallback: 'draft' | 'published' | 'cancelled') {
   return {
     title: body.title,
     subtitle: body.subtitle,
@@ -451,7 +521,9 @@ function toEventData(body: z.infer<typeof eventSchema>) {
     description: body.description,
     coverFrom: body.cover[0],
     coverTo: body.cover[1],
-    status: body.status,
+    // Состояние не прислали — оставляем прежнее, а у новой вечеринки
+    // это черновик
+    status: body.status ?? fallback,
   };
 }
 

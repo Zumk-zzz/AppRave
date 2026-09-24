@@ -12,16 +12,17 @@ export async function catalogRoutes(app: FastifyInstance) {
    * Афиша. Гостю видны только опубликованные события,
    * администратору — вообще все, включая черновики.
    */
-  app.get('/events', async (req) => {
-    // Черновики и отменённые видит тот, кто их правит. Смена тут ни при
-    // чём: афишу готовят днём, а не в зале.
-    const mayEdit = can(effectiveRole(readAuth(req)?.staffRole), 'catalog:write');
-
-    // Гостю — только то, что ещё впереди. Прошедшие вечеринки никуда
-    // не деваются: они остаются в заказах и в админской истории, но
-    // в афише им делать нечего.
+  /**
+   * Афиша: то, что можно купить прямо сейчас.
+   *
+   * Одинаковая для всех, включая администратора. Раньше ему сюда падали
+   * черновики и прошедшие — он открывал приложение как гость и видел
+   * свалку вместо афиши. Всё остальное лежит в управлении, на своей
+   * вкладке: см. GET /admin/events.
+   */
+  app.get('/events', async () => {
     const events = await db.event.findMany({
-      where: mayEdit ? {} : { status: 'published', ...liveFilter() },
+      where: { status: 'published', ...liveFilter() },
       orderBy: { startsAt: 'asc' },
       include: { ticketTypes: { orderBy: { priceKopecks: 'asc' } } },
     });

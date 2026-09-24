@@ -20,7 +20,9 @@
     "smoke:catalog": "node scripts/catalog-smoke.mjs",
     "smoke:refund": "node scripts/refund-smoke.mjs",
     "demo:refresh": "node scripts/refresh-events.mjs",
-    "smoke:rules": "node scripts/rules-smoke.mjs"
+    "smoke:rules": "node scripts/rules-smoke.mjs",
+    "demo:clean": "node scripts/clean-test-events.mjs",
+    "demo:points": "tsx scripts/recalc-points.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

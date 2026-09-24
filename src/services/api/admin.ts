@@ -7,8 +7,15 @@ import type {
   TableLayout,
 } from '@/src/services/types';
 import { request } from './client';
-import { mapStockItem, mapStockMove, mapTableLayout, toKopecks, toRubles } from './mappers';
-import type { ApiStockItem, ApiStockMove, ApiTableLayout } from './mappers';
+import {
+  mapEvent,
+  mapStockItem,
+  mapStockMove,
+  mapTableLayout,
+  toKopecks,
+  toRubles,
+} from './mappers';
+import type { ApiEvent, ApiStockItem, ApiStockMove, ApiTableLayout } from './mappers';
 
 /**
  * Правка каталога и склада на сервере.
@@ -18,6 +25,11 @@ import type { ApiStockItem, ApiStockMove, ApiTableLayout } from './mappers';
  */
 
 export const apiAdminService: AdminService = {
+  async events() {
+    const events = await request<ApiEvent[]>('/admin/events');
+    return events.map(mapEvent);
+  },
+
   async createEvent(event) {
     await request('/admin/events', { method: 'POST', body: toEventBody(event, true) });
   },

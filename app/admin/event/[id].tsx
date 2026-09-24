@@ -42,7 +42,9 @@ function blankEvent(): ClubEvent {
     lineup: [],
     description: '',
     cover: DEFAULT_COVER,
-    status: 'published',
+    // Новая вечеринка начинается черновиком: в афишу её выкладывают
+    // отдельным действием, когда всё заполнено
+    status: 'draft',
     tickets: [
       {
         id: 'tt_standard',

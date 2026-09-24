@@ -50,7 +50,12 @@ export default function RootLayout() {
     // конкретному человеку, и запрашивать её до авторизации бессмысленно.
     // Читается один раз — иначе экран билета и список заказов грузили бы
     // её каждый по отдельности и мигали.
-    if (status === 'authed') void loadOrders();
+    if (status !== 'authed') return;
+
+    void loadOrders();
+    // Баллы могли измениться без участия этого телефона: клуб вернул
+    // деньги за отменённую вечеринку, заказ отменён с другого устройства
+    void useAuthStore.getState().refresh();
   }, [status, loadOrders]);
 
   const userId = user?.id;

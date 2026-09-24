@@ -15,6 +15,11 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * различать их незачем. На сервере это разные операции.
  */
 export const mockAdminService: AdminService = {
+  async events() {
+    await delay(200);
+    return mockCatalog.events();
+  },
+
   async createEvent(event) {
     await delay(300);
     await mockCatalog.saveEvent(event);

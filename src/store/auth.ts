@@ -21,6 +21,8 @@ interface AuthState {
   signOut: () => Promise<void>;
   /** Обновить пользователя локально — например, после начисления баллов. */
   patchUser: (patch: Partial<User>) => void;
+  /** Перечитать баллы и уровень: их меняет не только покупка. */
+  refresh: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -79,6 +81,29 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     useOrdersStore.getState().clear();
     useStaffStore.getState().clear();
     set({ user: null, status: 'guest' });
+  },
+
+  /**
+   * Перечитать профиль.
+   *
+   * Баллы меняет не только покупка: отмена забирает их обратно, возврат
+   * за отменённую вечеринку — тоже, и происходит это на сервере. Без
+   * перечитывания в приложении остаётся вчерашняя цифра, и человек видит
+   * баллы за заказ, который сам же и отменил.
+   */
+  async refresh() {
+    const current = get().user;
+    if (!current) return;
+
+    try {
+      const fresh = await authService.refresh(current);
+      setActor(fresh);
+      await persist(fresh);
+      set({ user: fresh });
+    } catch {
+      // Нет связи — оставляем что было: показать старые баллы лучше,
+      // чем обнулить их из-за пропавшей сети
+    }
   },
 
   patchUser(patch) {

@@ -4,6 +4,7 @@ import { Alert } from 'react-native';
 
 import { canCancel, CANCEL_BLOCK_TEXT, REFUND_CUTOFF_HOURS } from '@/src/lib/refund';
 import type { Order } from '@/src/services';
+import { useAuthStore } from '@/src/store/auth';
 import { useOrdersStore } from '@/src/store/orders';
 
 /**
@@ -16,6 +17,7 @@ import { useOrdersStore } from '@/src/store/orders';
  */
 export function useCancelOrder() {
   const cancel = useOrdersStore((s) => s.cancel);
+  const refreshUser = useAuthStore((s) => s.refresh);
   const [cancelling, setCancelling] = useState<string | null>(null);
 
   const ask = (order: Order, onDone?: () => void) => {
@@ -44,6 +46,9 @@ export function useCancelOrder() {
               // Возврат товара делает сервис одной операцией: на сервере
               // это транзакция, повторять её на телефоне нельзя
               await cancel(order.id);
+              // Баллы за отменённый заказ забирает сервер — показать
+              // их дальше значило бы обещать то, чего уже нет
+              await refreshUser();
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
               onDone?.();
             } catch (e) {

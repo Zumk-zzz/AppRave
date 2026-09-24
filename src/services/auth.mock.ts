@@ -1,6 +1,11 @@
 import { parseContact } from '@/src/lib/contact';
 import { ROLE_LABEL, type StaffRole } from '@/src/lib/permissions';
+import { tierForPoints } from '@/src/lib/loyalty';
+import { mockOrdersService } from './orders.mock';
 import { InvalidCodeError, type AuthService, type User } from './types';
+
+/** Свои заказы из локального хранилища — источник для пересчёта баллов. */
+const mockCatalogOrders = () => mockOrdersService.mine();
 
 /** Код, который принимает мок. Показан на экране ввода. */
 export const DEMO_CODE = '0000';
@@ -83,6 +88,23 @@ export const mockAuthService: AuthService = {
     return parsed.channel === 'phone'
       ? { ...user, phone: parsed.value }
       : { ...user, email: parsed.value };
+  },
+
+  /**
+   * Баллы пересчитываются по состоявшимся заказам.
+   *
+   * Без сервера их некому уменьшить при отмене: начисление делает
+   * покупка, и если просто вычитать при отмене, счётчик разойдётся
+   * с историей на первой же ошибке. Здесь он выводится из заказов,
+   * поэтому сойдётся всегда.
+   */
+  async refresh(user) {
+    const orders = await mockCatalogOrders();
+    const points = orders
+      .filter((o) => o.status === 'paid' || o.status === 'used')
+      .reduce((sum, o) => sum + o.pointsEarned, 0);
+
+    return { ...user, points, tier: tierForPoints(points) };
   },
 };
 

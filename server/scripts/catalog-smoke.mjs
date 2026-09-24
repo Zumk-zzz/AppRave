@@ -72,8 +72,35 @@ const created = await api('/admin/events', { method: 'POST', token: admin.token,
 check('событие создано', created.status === 201 && !!created.body?.id, `статус ${created.status}`);
 
 const eventId = created.body.id;
+const asCreated = await api(`/events/${eventId}`, { token: admin.token });
+check('новая вечеринка — черновик', asCreated.body?.status === 'draft', asCreated.body?.status);
+
+const afishaBeforePublish = await api('/events');
+check(
+  'черновика нет в афише',
+  !afishaBeforePublish.body.some((e) => e.id === eventId),
+);
+
+// Публикуем отдельным действием — так это и делает администратор
+await api(`/admin/events/${eventId}`, {
+  method: 'PUT',
+  token: admin.token,
+  body: eventBody({
+    status: 'published',
+    tickets: [
+      {
+        id: asCreated.body.tickets[0].id,
+        name: 'Standard',
+        description: '',
+        priceKopecks: 100_000,
+        quantity: 10,
+      },
+    ],
+  }),
+});
+
 const loaded = await api(`/events/${eventId}`, { token: admin.token });
-check('событие сразу опубликовано', loaded.body?.status === 'published', loaded.body?.status);
+check('после публикации видна в афише', loaded.body?.status === 'published', loaded.body?.status);
 check('тип билета создан', loaded.body?.tickets.length === 1, `${loaded.body?.tickets.length}`);
 check(
   'остаток равен тиражу',
@@ -90,17 +117,50 @@ const order = await api('/orders', {
 });
 check('гость купил 3 билета', order.status === 201, `статус ${order.status}`);
 
-const grown = await api(`/admin/events/${eventId}`, {
+// Неоплаченный резерв удалению не мешает: денег по нему не было
+const withReserve = await api(`/admin/events/${eventId}`, { method: 'DELETE', token: admin.token });
+check(
+  'сгоревший резерв не держит вечеринку',
+  withReserve.status === 200,
+  `статус ${withReserve.status}`,
+);
+
+// Событие удалено вместе с резервом — создаём заново и уже оплачиваем
+const again = await api('/admin/events', {
+  method: 'POST',
+  token: admin.token,
+  body: eventBody({ status: 'published' }),
+});
+const eventId2 = again.body.id;
+const typeId2 = (await api(`/events/${eventId2}`, { token: admin.token })).body.tickets[0].id;
+
+const paidOrder = await api('/orders', {
+  method: 'POST',
+  token: guest.token,
+  key: uid(),
+  body: { eventId: eventId2, tickets: [{ ticketTypeId: typeId2, qty: 3 }] },
+});
+const paidPay = await api('/payments', {
+  method: 'POST',
+  token: guest.token,
+  body: { orderId: paidOrder.body.id },
+});
+await api('/webhooks/payment', {
+  method: 'POST',
+  body: { providerId: paidPay.body.providerId, status: 'succeeded' },
+});
+
+const grown = await api(`/admin/events/${eventId2}`, {
   method: 'PUT',
   token: admin.token,
   body: eventBody({
     title: 'SMOKE NIGHT 2',
-    tickets: [{ id: typeId, name: 'Standard', description: '', priceKopecks: 120_000, quantity: 20 }],
+    tickets: [{ id: typeId2, name: 'Standard', description: '', priceKopecks: 120_000, quantity: 20 }],
   }),
 });
 check('тираж увеличен', grown.status === 200, `статус ${grown.status}`);
 
-const afterGrow = await api(`/events/${eventId}`, { token: admin.token });
+const afterGrow = await api(`/events/${eventId2}`, { token: admin.token });
 check('название обновилось', afterGrow.body?.title === 'SMOKE NIGHT 2', afterGrow.body?.title);
 check(
   'проданное не затёрто',
@@ -108,16 +168,16 @@ check(
   `осталось ${afterGrow.body?.tickets[0].available} из ${afterGrow.body?.tickets[0].quantity}`,
 );
 
-const shrunk = await api(`/admin/events/${eventId}`, {
+const shrunk = await api(`/admin/events/${eventId2}`, {
   method: 'PUT',
   token: admin.token,
   body: eventBody({
-    tickets: [{ id: typeId, name: 'Standard', description: '', priceKopecks: 120_000, quantity: 2 }],
+    tickets: [{ id: typeId2, name: 'Standard', description: '', priceKopecks: 120_000, quantity: 2 }],
   }),
 });
 check('тираж меньше проданного отклонён', shrunk.status === 409, `статус ${shrunk.status}`);
 
-const dropped = await api(`/admin/events/${eventId}`, {
+const dropped = await api(`/admin/events/${eventId2}`, {
   method: 'PUT',
   token: admin.token,
   body: eventBody({
@@ -126,8 +186,9 @@ const dropped = await api(`/admin/events/${eventId}`, {
 });
 check('проданный тип нельзя убрать', dropped.status === 409, `статус ${dropped.status}`);
 
-const removal = await api(`/admin/events/${eventId}`, { method: 'DELETE', token: admin.token });
-check('событие с заказами не удалить', removal.status === 409, `статус ${removal.status}`);
+const removal = await api(`/admin/events/${eventId2}`, { method: 'DELETE', token: admin.token });
+check('оплаченный заказ держит вечеринку', removal.status === 409, `статус ${removal.status}`);
+check('причина названа', removal.body?.code === 'event_has_paid_orders', removal.body?.code);
 
 console.log('\n=== Меню и склад ===');
 const item = await api('/admin/bar', {
@@ -198,7 +259,7 @@ const blocked = await api(`/admin/tables/${table.id}`, {
 });
 check('стол снят с продажи', blocked.status === 200, `статус ${blocked.status}`);
 
-const inHall = (await api(`/events/${eventId}/tables`)).body.find((t) => t.id === table.id);
+const inHall = (await api(`/events/${eventId2}/tables`)).body.find((t) => t.id === table.id);
 check('снятый стол занят на любую дату', inHall?.taken === true, JSON.stringify(inHall?.taken));
 
 await api(`/admin/tables/${table.id}`, {
@@ -220,12 +281,12 @@ check('непроданную позицию можно удалить', cleanIt
 
 // Событие с заказом удалить нельзя, поэтому прячем его в черновики:
 // иначе проверочная вечеринка висела бы в афише после каждого прогона
-const hidden = await api(`/admin/events/${eventId}`, {
+const hidden = await api(`/admin/events/${eventId2}`, {
   method: 'PUT',
   token: admin.token,
   body: eventBody({
     status: 'draft',
-    tickets: [{ id: typeId, name: 'Standard', description: '', priceKopecks: 120_000, quantity: 20 }],
+    tickets: [{ id: typeId2, name: 'Standard', description: '', priceKopecks: 120_000, quantity: 20 }],
   }),
 });
 check('проверочное событие убрано из афиши', hidden.status === 200, `статус ${hidden.status}`);
@@ -233,7 +294,7 @@ check('проверочное событие убрано из афиши', hidd
 const forGuest = await api('/events');
 check(
   'черновик гостю не виден',
-  !forGuest.body.some((e) => e.id === eventId),
+  !forGuest.body.some((e) => e.id === eventId2),
 );
 
 console.log(`\n${failures === 0 ? 'ВСЕ ПРОВЕРКИ ПРОШЛИ' : `ПРОВАЛЕНО: ${failures}`}\n`);

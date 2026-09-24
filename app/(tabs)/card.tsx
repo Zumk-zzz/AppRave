@@ -32,8 +32,11 @@ export default function CardTab() {
   const upcoming = nextTier(tier);
   const progress = tierProgress(user.points);
   const remaining = pointsToNextTier(user.points);
-  const visits = orders.length;
-  const spent = orders.reduce((sum, o) => sum + o.total, 0);
+  // Отменённое и возвращённое не считается ни визитом, ни тратой:
+  // деньги вернулись гостю, и завышенные цифры на карте — обман
+  const counted = orders.filter((o) => o.status === 'paid' || o.status === 'used');
+  const visits = counted.length;
+  const spent = counted.reduce((sum, o) => sum + o.total, 0);
 
   return (
     <Screen scroll contentContainerStyle={styles.scrollBody}>

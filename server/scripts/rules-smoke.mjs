@@ -56,6 +56,9 @@ const eventBody = (title, startsAt, over = {}) => ({
   description: '',
   cover: ['#FF2E93', '#7A1350'],
   tickets: [{ name: 'Standard', description: '', priceKopecks: 100_000, quantity: 20 }],
+  // Новая вечеринка заводится черновиком, а купить можно только
+  // опубликованную — публикуем сразу, как это делает администратор
+  status: 'published',
   ...over,
 });
 
@@ -104,11 +107,23 @@ check(
   `${guestAfisha.body.length} в афише`,
 );
 
+// Афиша одна для всех, включая админа: прошедшие лежат в управлении,
+// а не падают ему в приложение как гостю
 const adminAfisha = await api('/events', { token: admin.token });
 check(
-  'у админа она осталась — это история',
-  adminAfisha.body.some((e) => e.id === finished.id),
+  'админу в афише её тоже не видно',
+  !adminAfisha.body.some((e) => e.id === finished.id),
 );
+
+const adminList = await api('/admin/events', { token: admin.token });
+check(
+  'в управлении она осталась — это история',
+  adminList.body.some((e) => e.id === finished.id),
+  `${adminList.body?.length} всего`,
+);
+
+const listForGuest = await api('/admin/events', { token: guest.token });
+check('гостю полный список закрыт', listForGuest.status === 403, `статус ${listForGuest.status}`);
 
 console.log('\n=== Идущую вечеринку купить ещё можно ===');
 // Началась час назад: гость, пришедший в полночь, не должен упереться

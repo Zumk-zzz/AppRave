@@ -61,6 +61,9 @@ const eventBody = (over = {}) => ({
   description: '',
   cover: ['#FF2E93', '#7A1350'],
   tickets: [{ name: 'Standard', description: '', priceKopecks: 200_000, quantity: 10 }],
+  // Новая вечеринка заводится черновиком, а купить можно только
+  // опубликованную — публикуем сразу, как это делает администратор
+  status: 'published',
   ...over,
 });
 

@@ -46,6 +46,10 @@ export const apiAuthService: AuthService = {
     }
   },
 
+  async refresh() {
+    return fetchMe();
+  },
+
   async linkContact(_user, contact, code) {
     try {
       const res = await request<ApiUser>('/auth/link', {

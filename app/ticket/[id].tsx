@@ -14,6 +14,7 @@ import {
   ORDER_STATUS_TONE,
 } from '@/src/lib/order-actions';
 import type { OrderLine } from '@/src/services';
+import { useAuthStore } from '@/src/store/auth';
 import { redeemableOf, useOrdersStore } from '@/src/store/orders';
 import { colors, fonts, radius, spacing } from '@/src/theme';
 
@@ -24,6 +25,7 @@ export default function TicketScreen() {
   const order = useOrdersStore((s) => s.orders.find((o) => o.id === id));
   const cancelLine = useOrdersStore((s) => s.cancelLine);
   const { ask, cancelling } = useCancelOrder();
+  const refreshUser = useAuthStore((s) => s.refresh);
 
   if (!order) {
     return (
@@ -56,6 +58,7 @@ export default function TicketScreen() {
           onPress: async () => {
             try {
               await cancelLine(order.id, line.id, left);
+              await refreshUser();
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             } catch (e) {
               reportFailure(e);

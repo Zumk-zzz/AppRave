@@ -311,6 +311,14 @@ export type TableLayout = Omit<ClubTable, 'taken'>;
  * он берётся из времени на телефоне — и однажды совпал бы с чужим.
  */
 export interface AdminService {
+  /**
+   * Все вечеринки: черновики, афиша, прошедшие и отменённые.
+   *
+   * Отдельно от `EventsService.list`, который отдаёт афишу — то, что
+   * можно купить. Раньше список был один, и администратор, открыв
+   * приложение как гость, видел в афише свои черновики.
+   */
+  events(): Promise<ClubEvent[]>;
   createEvent(event: ClubEvent): Promise<void>;
   updateEvent(event: ClubEvent): Promise<void>;
   deleteEvent(id: string): Promise<void>;
@@ -468,6 +476,15 @@ export interface AuthService {
   verifyCode(contact: string, code: string): Promise<User>;
   /** Привязать второй канал к текущему аккаунту. */
   linkContact(user: User, contact: string, code: string): Promise<User>;
+  /**
+   * Перечитать профиль.
+   *
+   * Баллы и уровень меняются не только при покупке: отмена заказа их
+   * забирает обратно, возврат за отменённую вечеринку — тоже. Считает
+   * это сервер, и приложению остаётся спросить, а не считать заново
+   * своей копией формулы.
+   */
+  refresh(user: User): Promise<User>;
 }
 
 /** Неверный код подтверждения — экран отличает эту ошибку от сетевой. */
