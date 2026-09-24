@@ -65,7 +65,9 @@ check('гость вошёл', !!guest?.token, guest?.user?.memberNo);
 // Роль выдаётся админом, а не заводится в базе руками: проверяем заодно
 // и тот путь, которым сотрудники появляются в жизни
 const admin = await login('+79000000000');
-const doormanContact = '+79000000002';
+// Свой диапазон: демо-номера 900 000-00-0X принадлежат экрану входа,
+// и переназначать им роли значит ломать вход в приложении
+const doormanContact = '+79001110022';
 await api('/staff/members', {
   method: 'POST',
   token: admin.token,
@@ -75,7 +77,7 @@ await api('/staff/members', {
 const doorman = await login(doormanContact);
 check('фейсер вошёл', doorman?.user?.role === 'doorman', doorman?.user?.role);
 
-const bartenderContact = '+79000000001';
+const bartenderContact = '+79001110011';
 await api('/staff/members', {
   method: 'POST',
   token: admin.token,

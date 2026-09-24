@@ -126,7 +126,55 @@ const BAR = [
   { name: 'Свежевыжатый сок', description: 'Апельсин, грейпфрут или яблоко', price: rub(550), category: 'soft', volume: '300 мл', popular: false, qty: 90, unit: 'шт', low: 12 },
 ];
 
+/**
+ * Демонстрационные сотрудники.
+ *
+ * Экран входа обещает: 900 000-00-0X — это роли. Обещание должно
+ * выполняться и на сервере, иначе войти фейсером можно только через
+ * админку, а проверить сценарий смены — никак.
+ *
+ * Заводится отдельно от каталога и на каждом запуске: каталог сеется
+ * один раз, а роль могли отозвать или перезаписать, и тогда демо-вход
+ * молча перестаёт работать.
+ */
+const DEMO_STAFF: { phone: string; name: string; role: 'manager' | 'bartender' | 'doorman' }[] = [
+  { phone: '+79000000001', name: 'Менеджер', role: 'manager' },
+  { phone: '+79000000002', name: 'Бармен', role: 'bartender' },
+  { phone: '+79000000003', name: 'Фейс-контроль', role: 'doorman' },
+];
+
+async function seedStaff() {
+  for (const person of DEMO_STAFF) {
+    const existing = await db.user.findUnique({ where: { phone: person.phone } });
+
+    if (existing) {
+      // Имя правим только безликое: настоящее имя, если его уже вписали
+      // в админке, затирать незачем
+      const name =
+        existing.name === 'Гость' || existing.name === 'Сотрудник' ? person.name : existing.name;
+
+      if (existing.role === person.role && existing.name === name) continue;
+
+      await db.user.update({ where: { id: existing.id }, data: { role: person.role, name } });
+      console.log(`Восстановлено: ${person.phone} → ${person.role}`);
+      continue;
+    }
+
+    await db.user.create({
+      data: {
+        phone: person.phone,
+        name: person.name,
+        role: person.role,
+        memberNo: `AR-${person.phone.slice(-4)}`,
+      },
+    });
+    console.log(`Заведён сотрудник: ${person.phone} → ${person.role}`);
+  }
+}
+
 async function main() {
+  await seedStaff();
+
   // Идемпотентно: повторный запуск не плодит дубли. Заказы и пользователей
   // не трогаем — снести чужие покупки при пересеве было бы неприятно.
   const existing = await db.event.count();

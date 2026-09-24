@@ -92,6 +92,11 @@ export default function ContactScreen() {
 
           {channel === 'phone' ? (
             <TextInput
+              // Ключ обязателен: без него React видит на этом месте тот же
+              // TextInput и просто меняет свойства, а iOS не перестраивает
+              // уже открытую клавиатуру. Переключившись на почту, человек
+              // остаётся с цифровой клавиатурой и не может набрать адрес.
+              key="phone-field"
               value={formatPhone(digits)}
               onChangeText={(next) => {
                 setDigits(applyPhoneEdit(digits, next));
@@ -108,6 +113,7 @@ export default function ContactScreen() {
             />
           ) : (
             <TextInput
+              key="email-field"
               value={email}
               onChangeText={(next) => {
                 setEmail(next);

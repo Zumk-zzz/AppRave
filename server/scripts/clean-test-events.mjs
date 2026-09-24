@@ -26,14 +26,12 @@ const suspects = await db.event.findMany({
   orderBy: { createdAt: 'asc' },
 });
 
-if (suspects.length === 0) {
-  console.log('\nПроверочных вечеринок нет.\n');
-  await db.$disconnect();
-  process.exit(0);
-}
-
 console.log('');
 let orders = 0;
+
+// Сотрудников чистим в любом случае: вечеринок могло не остаться,
+// а проверочные бармены никуда не делись
+if (suspects.length === 0) console.log('  проверочных вечеринок нет');
 
 for (const event of suspects) {
   await db.$transaction(async (tx) => {
@@ -47,6 +45,20 @@ for (const event of suspects) {
   console.log(`  удалено: ${event.title} (${event._count.orders} заказов)`);
 }
 
-console.log(`\nВечеринок: ${suspects.length}, заказов: ${orders}\n`);
+console.log(`\nВечеринок: ${suspects.length}, заказов: ${orders}`);
+
+/**
+ * Заодно снимаем роли с проверочных сотрудников.
+ *
+ * Набор про вход по почте заводит их десятками, и в списке команды
+ * они выглядят как настоящие бармены. Аккаунты не удаляем: к ним
+ * могут быть привязаны заказы — достаточно вернуть их в гости.
+ */
+const fakeStaff = await db.user.updateMany({
+  where: { role: { not: 'guest' }, name: { in: ['Бармен по почте', 'Сотрудник', 'Бармен Иван', 'Фейсер Пётр', 'Менеджер Анна'] } },
+  data: { role: 'guest' },
+});
+
+console.log(`Разжаловано проверочных сотрудников: ${fakeStaff.count}\n`);
 
 await db.$disconnect();
