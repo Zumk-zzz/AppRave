@@ -11,6 +11,7 @@ import { authRoutes } from './routes/auth.js';
 import { catalogRoutes } from './routes/catalog.js';
 import { orderRoutes } from './routes/orders.js';
 import { paymentRoutes } from './routes/payments.js';
+import { refundRoutes } from './routes/refunds.js';
 import { staffRoutes } from './routes/staff.js';
 
 const app = Fastify({
@@ -78,6 +79,7 @@ await app.register(catalogRoutes);
 await app.register(adminRoutes);
 await app.register(orderRoutes);
 await app.register(paymentRoutes);
+await app.register(refundRoutes);
 await app.register(staffRoutes);
 
 const stopJob = startExpirationJob(app.log);

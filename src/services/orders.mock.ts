@@ -199,6 +199,52 @@ async function log(kind: 'entry_admitted' | 'entry_manual' | 'bar_issued', order
   await logMock({ kind, user, orderId, summary });
 }
 
+/** Сколько заказов, гостей и денег затронет возврат по вечеринке. */
+export async function refundSummary(eventId: string) {
+  const orders = (await all()).filter(
+    (o) => o.eventId === eventId && (o.status === 'paid' || o.status === 'used'),
+  );
+
+  return {
+    orders: orders.length,
+    // На телефоне все заказы принадлежат одному человеку, но считаем
+    // так же, как на сервере: иначе числа в интерфейсе разошлись бы
+    guests: orders.length === 0 ? 0 : 1,
+    total: orders.reduce((sum, o) => sum + o.total, 0),
+  };
+}
+
+/**
+ * Возврат денег по отменённой вечеринке.
+ *
+ * Деньги возвращаются полностью, даже если гость успел получить напиток:
+ * вечеринку отменил клуб. А на склад уходит только невыданное — иначе
+ * появились бы бутылки, которых на полке нет.
+ */
+export async function mockRefund(eventId: string) {
+  const orders = await all();
+  const affected = orders.filter(
+    (o) => o.eventId === eventId && (o.status === 'paid' || o.status === 'used'),
+  );
+
+  for (const order of affected) {
+    for (const line of order.lines) {
+      await moveGoods(order, line, redeemableOf(line));
+    }
+  }
+
+  const refundedIds = new Set(affected.map((o) => o.id));
+  await save(
+    (await all()).map((o) => (refundedIds.has(o.id) ? { ...o, status: 'refunded' as const } : o)),
+  );
+
+  return {
+    refunded: affected.length,
+    guests: affected.length === 0 ? 0 : 1,
+    total: affected.reduce((sum, o) => sum + o.total, 0),
+  };
+}
+
 function withStatus(order: Order): Order {
   const status = deriveStatus(order);
   return status === order.status ? order : { ...order, status };

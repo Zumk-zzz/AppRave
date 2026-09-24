@@ -127,9 +127,22 @@ export default function TicketScreen() {
         <Text style={styles.orderNo}>{order.number}</Text>
       </View>
 
-      <Text variant="caption" tone="faint" style={styles.brightness}>
-        Покажите код на входе. Если не считывается — поднимите яркость экрана.
-      </Text>
+      {order.status === 'refunded' ? (
+        <Card style={styles.refunded}>
+          <Ionicons name="cash-outline" size={20} color={colors.accent} />
+          <View style={styles.refundedText}>
+            <Text variant="bodyStrong">Вечеринка отменена</Text>
+            <Text variant="caption" tone="muted">
+              Клуб вернул {formatPrice(order.total)}. Деньги придут на карту в течение трёх дней.
+              Баллы за эту покупку списаны.
+            </Text>
+          </View>
+        </Card>
+      ) : (
+        <Text variant="caption" tone="faint" style={styles.brightness}>
+          Покажите код на входе. Если не считывается — поднимите яркость экрана.
+        </Text>
+      )}
 
       <Card style={styles.details}>
         {ticketLines.length > 0 && (
@@ -348,6 +361,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     letterSpacing: 2,
     color: '#0A0A0B',
+  },
+  refunded: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+    marginBottom: spacing.xl,
+  },
+  refundedText: {
+    flex: 1,
+    gap: 2,
   },
   brightness: {
     textAlign: 'center',

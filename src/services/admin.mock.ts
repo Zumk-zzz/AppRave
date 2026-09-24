@@ -1,4 +1,5 @@
 import { mockCatalog } from './catalog.mock';
+import { mockRefund, refundSummary } from './orders.mock';
 import type { AdminService } from './types';
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -57,6 +58,31 @@ export const mockAdminService: AdminService = {
   async updateTable(table) {
     await delay(250);
     await mockCatalog.saveTable(table);
+  },
+
+  async refundPreview(eventId) {
+    const events = await mockCatalog.events();
+    const status = events.find((e) => e.id === eventId)?.status ?? 'published';
+    const summary = await refundSummary(eventId);
+
+    return { ready: status === 'cancelled', status, ...summary };
+  },
+
+  async refundEvent(eventId, confirm) {
+    const events = await mockCatalog.events();
+    const event = events.find((e) => e.id === eventId);
+    if (!event) throw new Error('Событие не найдено');
+
+    // Те же две проверки, что и на сервере: без них автономный режим
+    // вёл бы себя иначе, и проверить сценарий на нём было бы нельзя
+    if ((event.status ?? 'published') !== 'cancelled') {
+      throw new Error('Сначала переведите вечеринку в «Отменена»');
+    }
+    if (confirm.trim() !== event.title.trim()) {
+      throw new Error('Название не совпадает — возврат не выполнен');
+    }
+
+    return mockRefund(eventId);
   },
 
   async resetCatalog() {

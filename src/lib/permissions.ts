@@ -36,6 +36,14 @@ export type Permission =
   /** Видеть заказы гостей и выручку */
   | 'orders:read'
   | 'analytics:read'
+  /**
+   * Возвращать деньги за отменённую вечеринку.
+   *
+   * Отдельно от 'catalog:write' намеренно: отменить вечеринку — решение
+   * операционное, его принимает управляющий. Вернуть за неё деньги —
+   * решение денежное, и принимать его должен тот, кто за деньги отвечает.
+   */
+  | 'payments:refund'
   /** Выдавать и отзывать роли */
   | 'staff:manage'
   /** Покупать билеты и напитки. У персонала этого права нет. */
@@ -61,6 +69,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
     'orders:read',
     'analytics:read',
     'staff:manage',
+    'payments:refund',
   ],
 };
 

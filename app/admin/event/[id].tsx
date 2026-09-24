@@ -18,6 +18,7 @@ import {
 import { DEFAULT_COVER } from '@/src/data/covers';
 import { AdminHeader } from '@/src/features/admin/AdminHeader';
 import { CoverPicker } from '@/src/features/admin/CoverPicker';
+import { RefundSection } from '@/src/features/admin/RefundSection';
 import { GENRE_LABEL } from '@/src/lib/events';
 import { formatEventDate } from '@/src/lib/format';
 import type { ClubEvent, Genre, TicketType } from '@/src/services';
@@ -41,6 +42,7 @@ function blankEvent(): ClubEvent {
     lineup: [],
     description: '',
     cover: DEFAULT_COVER,
+    status: 'published',
     tickets: [
       {
         id: 'tt_standard',
@@ -53,6 +55,12 @@ function blankEvent(): ClubEvent {
     ],
   };
 }
+
+const STATUS_HINT: Record<'draft' | 'published' | 'cancelled', string> = {
+  published: 'Видна гостям, билеты продаются',
+  draft: 'Готовится: гостям не видна, купить нельзя',
+  cancelled: 'Отменена. Пропадает из афиши; деньги возвращаются отдельно',
+};
 
 /** Сколько уже продано: тираж минус остаток. */
 function soldOf(ticket: TicketType): number {
@@ -74,10 +82,15 @@ export default function AdminEventForm() {
 
   const [dj, setDj] = useState('');
   const [saving, setSaving] = useState(false);
+  // Возврат считается по тому, что записано, а не по тому, что на экране
+  const [dirty, setDirty] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [showError, setShowError] = useState(false);
 
-  const patch = (part: Partial<ClubEvent>) => setDraft((d) => ({ ...d, ...part }));
+  const patch = (part: Partial<ClubEvent>) => {
+    setDirty(true);
+    setDraft((d) => ({ ...d, ...part }));
+  };
 
   const titleError = draft.title.trim().length === 0 ? 'Без названия вечеринку не найдут' : null;
   const ticketsError = draft.tickets.length === 0 ? 'Нужен хотя бы один тип билета' : null;
@@ -91,11 +104,13 @@ export default function AdminEventForm() {
     setDj('');
   };
 
-  const patchTicket = (index: number, part: Partial<TicketType>) =>
+  const patchTicket = (index: number, part: Partial<TicketType>) => {
+    setDirty(true);
     setDraft((d) => ({
       ...d,
       tickets: d.tickets.map((t, i) => (i === index ? { ...t, ...part } : t)),
     }));
+  };
 
   const addTicket = () => {
     Haptics.selectionAsync();
@@ -127,7 +142,11 @@ export default function AdminEventForm() {
     try {
       await saveEvent(draft, isNew);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      router.back();
+      setDirty(false);
+
+      // Отменённая вечеринка остаётся открытой: сразу после отмены
+      // администратору нужен возврат, а он тут же, ниже по экрану
+      if (draft.status !== 'cancelled') router.back();
     } catch (e) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert('Не получилось', e instanceof Error ? e.message : 'Попробуйте ещё раз');
@@ -205,6 +224,26 @@ export default function AdminEventForm() {
           multiline
         />
       </View>
+
+      {!isNew && (
+        <View style={styles.section}>
+          <Text variant="label" tone="faint">
+            Состояние
+          </Text>
+          <Segmented
+            options={[
+              { value: 'published', label: 'В афише' },
+              { value: 'draft', label: 'Черновик' },
+              { value: 'cancelled', label: 'Отменена' },
+            ]}
+            value={draft.status ?? 'published'}
+            onChange={(status) => patch({ status })}
+          />
+          <Text variant="caption" tone="faint">
+            {STATUS_HINT[draft.status ?? 'published']}
+          </Text>
+        </View>
+      )}
 
       {/* Дата */}
       <View style={styles.section}>
@@ -366,6 +405,8 @@ export default function AdminEventForm() {
           </Card>
         ))}
       </View>
+
+      {!isNew && <RefundSection event={draft} dirty={dirty} onDone={() => router.back()} />}
 
       <Sheet visible={pickerOpen} onClose={() => setPickerOpen(false)} title="Когда">
         <View style={styles.picker}>

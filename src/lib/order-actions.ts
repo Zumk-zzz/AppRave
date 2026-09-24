@@ -17,6 +17,7 @@ export const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
   used: 'Использован',
   cancelled: 'Отменён',
   expired: 'Резерв сгорел',
+  refunded: 'Деньги возвращены',
 };
 
 export const ORDER_STATUS_TONE: Record<OrderStatus, BadgeTone> = {
@@ -25,6 +26,7 @@ export const ORDER_STATUS_TONE: Record<OrderStatus, BadgeTone> = {
   used: 'neutral',
   cancelled: 'danger',
   expired: 'danger',
+  refunded: 'gold',
 };
 
 /** Можно ли ещё отменить эту строку. */

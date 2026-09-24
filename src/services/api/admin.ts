@@ -7,7 +7,7 @@ import type {
   TableLayout,
 } from '@/src/services/types';
 import { request } from './client';
-import { mapStockItem, mapStockMove, mapTableLayout, toKopecks } from './mappers';
+import { mapStockItem, mapStockMove, mapTableLayout, toKopecks, toRubles } from './mappers';
 import type { ApiStockItem, ApiStockMove, ApiTableLayout } from './mappers';
 
 /**
@@ -58,6 +58,33 @@ export const apiAdminService: AdminService = {
     await request(`/admin/tables/${table.id}`, { method: 'PUT', body: toTableBody(table) });
   },
 
+  async refundPreview(eventId) {
+    const res = await request<{
+      ready: boolean;
+      status: 'draft' | 'published' | 'cancelled';
+      orders: number;
+      guests: number;
+      totalKopecks: number;
+    }>(`/admin/events/${eventId}/refund`);
+
+    return {
+      ready: res.ready,
+      status: res.status,
+      orders: res.orders,
+      guests: res.guests,
+      total: toRubles(res.totalKopecks),
+    };
+  },
+
+  async refundEvent(eventId, confirm) {
+    const res = await request<{ refunded: number; guests: number; totalKopecks: number }>(
+      `/admin/events/${eventId}/refund`,
+      { method: 'POST', body: { confirm } },
+    );
+
+    return { refunded: res.refunded, guests: res.guests, total: toRubles(res.totalKopecks) };
+  },
+
   async resetCatalog() {
     // Сервер такого не умеет намеренно: сброс стёр бы проданное вместе
     // с историей. Кнопка в интерфейсе при работе с сервером не показывается.
@@ -92,6 +119,7 @@ function toEventBody(event: ClubEvent, isNew: boolean) {
     lineup: event.lineup,
     description: event.description,
     cover: event.cover,
+    status: event.status ?? 'published',
     tickets: event.tickets.map((t) => ({
       // У нового события идентификаторы типов придуманы телефоном —
       // сервер выдаст свои, поэтому их не отправляем

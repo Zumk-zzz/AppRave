@@ -20,7 +20,7 @@ import type {
  * а не расползается делениями на сто по экранам.
  */
 
-const toRubles = (kopecks: number): number => Math.round(kopecks) / 100;
+export const toRubles = (kopecks: number): number => Math.round(kopecks) / 100;
 
 /** Обратный перевод, для отправки на сервер. Округление обязательно:
  *  рубль с копейками, умноженный на сто, в double даёт 8999.999999. */
@@ -58,6 +58,7 @@ export function mapEvent(e: ApiEvent): ClubEvent {
     lineup: e.lineup,
     description: e.description,
     cover: e.cover,
+    status: e.status,
     tickets: e.tickets.map((t) => ({
       id: t.id,
       name: t.name,
@@ -192,7 +193,7 @@ const STATUS: Record<ApiOrder['status'], OrderStatus> = {
   used: 'used',
   expired: 'expired',
   cancelled: 'cancelled',
-  refunded: 'cancelled',
+  refunded: 'refunded',
 };
 
 export function mapOrder(o: ApiOrder): Order {

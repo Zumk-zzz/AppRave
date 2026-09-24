@@ -22,6 +22,7 @@ const STATUS_LABEL: Record<Order['status'], string> = {
   used: 'Прошёл',
   cancelled: 'Отменён',
   expired: 'Резерв сгорел',
+  refunded: 'Возврат',
 };
 
 export default function AdminOrders() {
@@ -40,17 +41,16 @@ export default function AdminOrders() {
   const [filter, setFilter] = useState<Filter>('all');
   const [selected, setSelected] = useState<Order | null>(null);
 
-  // Отменённые заказы в выручку не идут: деньги вернулись гостю,
+  // Отменённые и возвращённые в выручку не идут: деньги вернулись гостю,
   // и завышенная цифра тут хуже, чем отсутствие цифры вообще.
-  const active = orders.filter((o) => o.status !== 'cancelled');
+  const returned = (o: Order) => o.status === 'cancelled' || o.status === 'refunded';
+  const active = orders.filter((o) => !returned(o));
   const revenue = active.reduce((sum, o) => sum + o.total, 0);
   const guests = active.reduce(
     (sum, o) => sum + o.lines.filter((l) => l.kind === 'ticket').reduce((n, l) => n + l.qty, 0),
     0,
   );
-  const refunded = orders
-    .filter((o) => o.status === 'cancelled')
-    .reduce((sum, o) => sum + o.total, 0);
+  const refunded = orders.filter(returned).reduce((sum, o) => sum + o.total, 0);
 
   const visible = useMemo(
     () => (filter === 'all' ? orders : orders.filter((o) => o.status === filter)),

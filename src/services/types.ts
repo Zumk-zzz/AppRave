@@ -53,6 +53,15 @@ export interface TicketType {
   quantity?: number;
 }
 
+/**
+ * Состояние вечеринки в афише.
+ *
+ * `draft` — готовится, гостям не видна. `cancelled` — отменена клубом;
+ * из афиши пропадает, но остаётся в системе, потому что по ней есть
+ * проданные билеты, которые надо вернуть.
+ */
+export type EventStatus = 'draft' | 'published' | 'cancelled';
+
 export interface ClubEvent {
   id: string;
   title: string;
@@ -70,6 +79,8 @@ export interface ClubEvent {
    */
   cover: readonly [string, string];
   tickets: TicketType[];
+  /** По умолчанию опубликована: у записей, сделанных до появления поля, его нет */
+  status?: EventStatus;
 }
 
 export interface EventsService {
@@ -82,9 +93,11 @@ export interface EventsService {
  *
  * `pending` — товар зарезервирован, оплата ещё не подтверждена; резерв
  * сгорает сам и переводит заказ в `expired`. `used` выставляется
- * автоматически, когда выданы все строки.
+ * автоматически, когда выданы все строки. `refunded` — клуб отменил
+ * вечеринку и вернул деньги; в отличие от `cancelled` это решение
+ * не гостя, и разница видна и ему, и в отчётах.
  */
-export type OrderStatus = 'pending' | 'paid' | 'used' | 'cancelled' | 'expired';
+export type OrderStatus = 'pending' | 'paid' | 'used' | 'cancelled' | 'expired' | 'refunded';
 
 /** Что именно гасится при сканировании. */
 export type RedeemKind = 'ticket' | 'bar';
@@ -311,6 +324,17 @@ export interface AdminService {
   createTable(table: TableLayout): Promise<void>;
   updateTable(table: TableLayout): Promise<void>;
 
+  /** Что произойдёт при возврате: сколько заказов, гостей и денег. */
+  refundPreview(eventId: string): Promise<RefundPreview>;
+  /**
+   * Вернуть деньги всем, кто купил билеты на отменённую вечеринку.
+   *
+   * `confirm` — название вечеринки слово в слово. Проверяется и на
+   * сервере: это единственное действие, которое двигает деньги обратно,
+   * и одного «вы уверены?» для него мало.
+   */
+  refundEvent(eventId: string, confirm: string): Promise<RefundResult>;
+
   /**
    * Вернуть каталог к демонстрационным данным.
    *
@@ -318,6 +342,22 @@ export interface AdminService {
    * вместе с историей, поэтому там ручки нет вовсе.
    */
   resetCatalog(): Promise<void>;
+}
+
+export interface RefundPreview {
+  /** Готова ли вечеринка к возврату: деньги возвращают только по отменённой */
+  ready: boolean;
+  status: EventStatus;
+  orders: number;
+  guests: number;
+  /** Сумма в рублях */
+  total: number;
+}
+
+export interface RefundResult {
+  refunded: number;
+  guests: number;
+  total: number;
 }
 
 // --- Смена, журнал, сотрудники, стоп-лист ---
