@@ -2,9 +2,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import * as Haptics from 'expo-haptics';
-import { useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useMemo, useState } from 'react';
+import { Alert, Pressable, StyleSheet, View } from 'react-native';
 
 import { Badge, Button, Card, Field, Screen, SectionHeader, Sheet, Text } from '@/src/components';
 import { ROLE_LABEL } from '@/src/lib/permissions';
@@ -18,24 +18,30 @@ export default function ShiftScreen() {
   const seesEveryone = useCan('orders:read');
   const role = useRole();
 
-  const shifts = useStaffStore((s) => s.shifts);
+  const current = useStaffStore((s) => s.shift);
   const actions = useStaffStore((s) => s.actions);
   const openShift = useStaffStore((s) => s.openShift);
   const closeShift = useStaffStore((s) => s.closeShift);
+  const loadStaff = useStaffStore((s) => s.load);
 
   const [closing, setClosing] = useState(false);
   const [note, setNote] = useState('');
 
-  const current = useMemo(
-    () => shifts.find((s) => s.userId === user?.id && !s.closedAt),
-    [shifts, user?.id],
+  // Журнал перечитывается при каждом открытии: смена идёт прямо сейчас,
+  // и вчерашний список в ней бесполезен
+  useFocusEffect(
+    useCallback(() => {
+      void loadStaff(user);
+    }, [loadStaff, user]),
   );
 
-  /** Свои действия за смену, а у управляющих — действия всей команды. */
-  const visibleActions = useMemo(() => {
-    if (seesEveryone) return actions.slice(0, 100);
-    return actions.filter((a) => a.actorId === user?.id).slice(0, 100);
-  }, [actions, seesEveryone, user?.id]);
+  /**
+   * Что показывать в журнале.
+   *
+   * Разделение делает сервер: сотрудник получает только свои записи,
+   * управляющий — все. Здесь остаётся только ограничить длину.
+   */
+  const visibleActions = useMemo(() => actions.slice(0, 100), [actions]);
 
   const shiftActions = current ? actions.filter((a) => a.shiftId === current.id) : [];
 
@@ -50,28 +56,26 @@ export default function ShiftScreen() {
   if (!user) return null;
 
   const handleOpen = async () => {
-    await openShift({ id: user.id, name: user.name });
-    useStaffStore.getState().log({
-      kind: 'shift_opened',
-      actorId: user.id,
-      actorName: user.name,
-      actorRole: role,
-    });
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    try {
+      // Открытие и закрытие смены записывает в журнал тот, кто их исполняет
+      await openShift(user);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert('Не получилось', e instanceof Error ? e.message : 'Попробуйте ещё раз');
+    }
   };
 
   const handleClose = async () => {
-    useStaffStore.getState().log({
-      kind: 'shift_closed',
-      actorId: user.id,
-      actorName: user.name,
-      actorRole: role,
-      summary: note.trim() || undefined,
-    });
-    await closeShift(user.id, note.trim() || undefined);
-    setClosing(false);
-    setNote('');
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    try {
+      await closeShift(user, note.trim() || undefined);
+      setClosing(false);
+      setNote('');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert('Не получилось', e instanceof Error ? e.message : 'Попробуйте ещё раз');
+    }
   };
 
   return (

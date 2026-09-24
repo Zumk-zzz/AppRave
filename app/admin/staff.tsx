@@ -5,6 +5,7 @@ import { Alert, StyleSheet, View } from 'react-native';
 
 import { Badge, Button, Card, Field, Screen, SectionHeader, Segmented, Sheet, Text } from '@/src/components';
 import { AdminHeader } from '@/src/features/admin/AdminHeader';
+import { formatContact } from '@/src/lib/contact';
 import { extractDigits, formatPhone, isPhoneComplete, toE164 } from '@/src/lib/phone';
 import {
   ASSIGNABLE_ROLES,
@@ -13,17 +14,15 @@ import {
   type UserRole,
 } from '@/src/lib/permissions';
 import { STAFF_PHONES } from '@/src/services';
-import { useAuthStore, useRole } from '@/src/store/auth';
+import { useAuthStore } from '@/src/store/auth';
 import { useStaffStore } from '@/src/store/staff';
 import { colors, spacing } from '@/src/theme';
 
 export default function AdminStaff() {
   const me = useAuthStore((s) => s.user);
-  const myRole = useRole();
   const members = useStaffStore((s) => s.members);
   const addMember = useStaffStore((s) => s.addMember);
   const removeMember = useStaffStore((s) => s.removeMember);
-  const log = useStaffStore((s) => s.log);
 
   const [open, setOpen] = useState(false);
   const [digits, setDigits] = useState('');
@@ -37,43 +36,38 @@ export default function AdminStaff() {
     if (!canSave || !me) return;
 
     setSaving(true);
-    const phone = toE164(digits);
 
-    await addMember({ phone, name: name.trim(), role });
-    log({
-      kind: 'role_granted',
-      actorId: me.id,
-      actorName: me.name,
-      actorRole: myRole,
-      summary: `${ROLE_LABEL[role]} · ${formatPhone(digits)}`,
-    });
-
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setSaving(false);
-    setOpen(false);
-    setDigits('');
-    setName('');
-    setRole('bartender');
+    try {
+      // Выдачу роли записывает в журнал тот, кто её исполняет
+      await addMember({ contact: toE164(digits), name: name.trim(), role });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setOpen(false);
+      setDigits('');
+      setName('');
+      setRole('bartender');
+    } catch (e) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert('Не получилось', e instanceof Error ? e.message : 'Попробуйте ещё раз');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleRemove = (id: string, memberName: string, memberRole: UserRole) => {
+  const handleRemove = (id: string, memberName: string) => {
     Alert.alert('Отозвать роль?', `${memberName} станет обычным гостем и потеряет доступ.`, [
       { text: 'Отмена', style: 'cancel' },
       {
         text: 'Отозвать',
         style: 'destructive',
         onPress: async () => {
-          await removeMember(id);
-          if (me) {
-            log({
-              kind: 'role_revoked',
-              actorId: me.id,
-              actorName: me.name,
-              actorRole: myRole,
-              summary: `${ROLE_LABEL[memberRole]} · ${memberName}`,
-            });
+          try {
+            await removeMember(id);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          } catch (e) {
+            // Себя разжаловать нельзя: иначе выдать роли станет некому
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+            Alert.alert('Не получилось', e instanceof Error ? e.message : 'Попробуйте ещё раз');
           }
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         },
       },
     ]);
@@ -103,7 +97,7 @@ export default function AdminStaff() {
                 <View style={styles.flex}>
                   <Text variant="bodyStrong">{m.name}</Text>
                   <Text variant="caption" tone="muted">
-                    {formatPhone(m.phone.replace(/^\+7/, ''))}
+                    {formatContact(m.contact)}
                   </Text>
                 </View>
                 <Badge label={ROLE_LABEL[m.role]} tone="accent" />
@@ -117,7 +111,7 @@ export default function AdminStaff() {
                 label="Отозвать роль"
                 variant="ghost"
                 fullWidth
-                onPress={() => handleRemove(m.id, m.name, m.role)}
+                onPress={() => handleRemove(m.id, m.name)}
               />
             </Card>
           ))}

@@ -1,4 +1,6 @@
 /** Проверка ролей, прав и рабочих сценариев персонала. */
+import { topUpStock, topUpTickets } from './top-up.mjs';
+
 const BASE = 'http://127.0.0.1:3000';
 let failures = 0;
 
@@ -78,6 +80,8 @@ check('гость видит пустой журнал своих действи
 console.log('\n=== Покупка гостя ===');
 const menu = (await api('/bar/menu')).body;
 const drink = menu.find((m) => m.available && m.category === 'cocktails');
+await topUpStock(api, admin.token, drink.id);
+await topUpTickets(api, admin.token, ev.id, tt.id);
 const order = await api('/orders', {
   method: 'POST', token: guest.token, key: uid(),
   body: { eventId: ev.id, tickets: [{ ticketTypeId: tt.id, qty: 2 }], bar: [{ barItemId: drink.id, qty: 3 }] },
@@ -149,7 +153,7 @@ const roles = [...new Set(all.body.map((a) => a.actor.role))];
 check('менеджер видит действия всех', roles.length > 1, roles.join(', '));
 
 console.log('\n=== Стоп-лист ===');
-const ban = await api('/staff/bans', { method: 'POST', token: doorman.token, body: { phone: PHONES.guest, reason: 'Драка 12.09' } });
+const ban = await api('/staff/bans', { method: 'POST', token: doorman.token, body: { phone: PHONES.guest, reason: 'Драка 12.09', name: 'Буйный гость' } });
 check('отказ добавлен', ban.status === 200);
 
 const scanBanned = await api(`/staff/scan/${num}`, { token: doorman.token });
@@ -164,6 +168,40 @@ check('вход по отказу запрещён', blocked.status === 409, `с
 await api(`/staff/bans/${ban.body.id}`, { method: 'DELETE', token: doorman.token });
 const afterLift = await api(`/staff/scan/${order2.body.number}/admit`, { method: 'POST', token: doorman.token });
 check('после снятия отказа проход открыт', afterLift.status === 200, `статус ${afterLift.status}`);
+
+const active = await api('/staff/bans', { token: doorman.token });
+check(
+  'снятый отказ пропал из действующих',
+  !active.body.some((b) => b.id === ban.body.id),
+  `${active.body?.length} записей`,
+);
+
+const history = await api('/staff/bans?all=true', { token: doorman.token });
+const lifted = history.body.find((b) => b.id === ban.body.id);
+check('снятый отказ остался в истории', !!lifted?.liftedAt, JSON.stringify(lifted?.liftedAt));
+check('в отказе сохранено имя', lifted?.name === 'Буйный гость', JSON.stringify(lifted?.name));
+
+// Отказ выносится человеку, а не каналу входа: гость, зашедший по почте,
+// должен быть узнан так же, как зашедший по телефону
+const byMail = await login('mail.ban@example.com');
+const mailOrder = await api('/orders', {
+  method: 'POST', token: byMail.token, key: uid(),
+  body: { eventId: ev.id, tickets: [{ ticketTypeId: tt.id, qty: 1 }] },
+});
+const mailPay = await api('/payments', { method: 'POST', token: byMail.token, body: { orderId: mailOrder.body.id } });
+await api('/webhooks/payment', { method: 'POST', body: { providerId: mailPay.body.providerId, status: 'succeeded' } });
+
+const mailBan = await api('/staff/bans', {
+  method: 'POST', token: doorman.token,
+  body: { phone: 'mail.ban@example.com', reason: 'Проверка почты' },
+});
+const mailScan = await api(`/staff/scan/${mailOrder.body.number}`, { token: doorman.token });
+check('отказ по почте виден сканеру', mailScan.body?.ban?.reason === 'Проверка почты', JSON.stringify(mailScan.body?.ban));
+
+const mailAdmit = await api(`/staff/scan/${mailOrder.body.number}/admit`, { method: 'POST', token: doorman.token });
+check('вход по отказу с почтой запрещён', mailAdmit.status === 409, `статус ${mailAdmit.status}`);
+
+await api(`/staff/bans/${mailBan.body.id}`, { method: 'DELETE', token: doorman.token });
 
 console.log('\n=== Списки ===');
 const gl = await api(`/staff/orders?eventId=${ev.id}`, { token: doorman.token });

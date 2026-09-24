@@ -30,7 +30,6 @@ export default function GuestsTab() {
   const bans = useStaffStore((s) => s.bans);
   const addBan = useStaffStore((s) => s.addBan);
   const liftBan = useStaffStore((s) => s.liftBan);
-  const log = useStaffStore((s) => s.log);
 
   const [events, setEvents] = useState<ClubEvent[]>([]);
   const [eventId, setEventId] = useState<string | null>(null);
@@ -100,18 +99,15 @@ export default function GuestsTab() {
   const handleBan = async () => {
     if (!banTarget || reason.trim().length < 3 || !me) return;
 
-    await addBan({ contact: banTarget.contact, name: banTarget.name, reason: reason.trim() });
-    log({
-      kind: 'entry_manual',
-      actorId: me.id,
-      actorName: me.name,
-      actorRole: myRole,
-      summary: `Отказ: ${reason.trim()}`,
-    });
-
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-    setBanTarget(null);
-    setReason('');
+    try {
+      await addBan({ contact: banTarget.contact, name: banTarget.name, reason: reason.trim() });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      setBanTarget(null);
+      setReason('');
+    } catch (e) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert('Не получилось', e instanceof Error ? e.message : 'Попробуйте ещё раз');
+    }
   };
 
   const handleManualAdmit = (order: Order, ban?: { reason: string }) => {
@@ -134,7 +130,7 @@ export default function GuestsTab() {
           onPress: () => {
             void (async () => {
               try {
-                await admit(order);
+                await admit(order, true);
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
               } catch (e) {
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);

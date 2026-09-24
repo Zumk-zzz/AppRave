@@ -172,8 +172,13 @@ export interface OrdersService {
   cancelLine(orderId: string, lineId: string, count: number): Promise<Order>;
   /** Заказ по номеру из QR. null — такого заказа нет. */
   byNumber(number: string): Promise<Order | null>;
-  /** Пропустить гостей: гасит все билетные строки разом. */
-  admit(order: Order): Promise<Order>;
+  /**
+   * Пропустить гостей: гасит все билетные строки разом.
+   *
+   * `manual` — пропуск без кода, когда у гостя сел телефон. В журнале
+   * такие отмечаются отдельно: это не то же самое, что проход по QR.
+   */
+  admit(order: Order, manual?: boolean): Promise<Order>;
   /** Выдать напитки по одной позиции, возможно частично. */
   issue(order: Order, lineId: string, count: number): Promise<Order>;
   /** Заказы смены: список на входе, очередь бара, сводка администратора. */
@@ -313,6 +318,92 @@ export interface AdminService {
    * вместе с историей, поэтому там ручки нет вовсе.
    */
   resetCatalog(): Promise<void>;
+}
+
+// --- Смена, журнал, сотрудники, стоп-лист ---
+
+export type StaffActionKind =
+  | 'entry_admitted'
+  | 'entry_manual'
+  | 'bar_issued'
+  | 'shift_opened'
+  | 'shift_closed'
+  | 'role_granted'
+  | 'role_revoked'
+  | 'stock_adjusted';
+
+/**
+ * Запись журнала.
+ *
+ * В клубе это не гигиена, а деньги: единственный способ разобраться,
+ * куда делся алкоголь, — знать, кто и что выдал в конкретную минуту.
+ */
+export interface StaffAction {
+  id: string;
+  kind: StaffActionKind;
+  actorId: string;
+  actorName: string;
+  actorRole: UserRole;
+  orderId?: string;
+  /** Короткое описание для журнала: «Негрони × 2», «2 гостя» */
+  summary?: string;
+  shiftId?: string;
+  createdAt: string;
+}
+
+export interface Shift {
+  id: string;
+  openedAt: string;
+  closedAt?: string;
+  /** Заметка при закрытии: расхождения, происшествия */
+  note?: string;
+}
+
+export interface StaffMember {
+  id: string;
+  name: string;
+  /** Телефон или почта — чем сотрудник входит */
+  contact: string;
+  role: UserRole;
+}
+
+export interface BanEntry {
+  id: string;
+  /** Контакт гостя: телефон или почта */
+  contact: string;
+  /** Имя на момент отказа — контакт может смениться, память должна остаться */
+  name?: string;
+  reason: string;
+  createdAt: string;
+  /** Снятие отказа вместо удаления: история не должна пропадать */
+  liftedAt?: string;
+}
+
+/**
+ * Смена, журнал, сотрудники и стоп-лист.
+ *
+ * Журнал только читается. Записывает его тот, кто выполняет действие:
+ * на сервере — сам сервер, в одной операции с выдачей. Принимать записи
+ * от приложения нельзя — журналу, в который можно дописать что угодно,
+ * незачем верить.
+ */
+export interface StaffService {
+  /** Моя открытая смена, если она есть. */
+  currentShift(user: User): Promise<Shift | null>;
+  openShift(user: User): Promise<Shift>;
+  closeShift(user: User, note?: string): Promise<void>;
+
+  /** Журнал: сотрудник видит свои действия, управляющий — все. */
+  actions(limit?: number): Promise<StaffAction[]>;
+
+  members(): Promise<StaffMember[]>;
+  addMember(input: { contact: string; name: string; role: UserRole }): Promise<void>;
+  removeMember(id: string): Promise<void>;
+
+  /** Стоп-лист. Со снятыми отказами — когда нужна история. */
+  bans(all?: boolean): Promise<BanEntry[]>;
+  addBan(input: { contact: string; name?: string; reason: string }): Promise<void>;
+  liftBan(id: string): Promise<void>;
 }
 
 export interface AuthService {

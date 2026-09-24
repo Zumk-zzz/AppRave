@@ -4,6 +4,8 @@
  */
 import { execFileSync } from 'node:child_process';
 
+import { topUpStock, topUpTickets } from './top-up.mjs';
+
 const BASE = 'http://127.0.0.1:3000';
 
 /**
@@ -98,7 +100,8 @@ const noToken = await api('/orders', { method: 'POST', key: uid(), body: { event
 check('без токена заказ отклонён', noToken.status === 401, `статус ${noToken.status}`);
 
 console.log('\n=== Цена берётся из базы ===');
-const ticketType = withStock.tickets.find((t) => t.available > 0);
+await topUpTickets(api, admin.token, withStock.id, withStock.tickets[0].id);
+const ticketType = (await api(`/events/${withStock.id}`)).body.tickets[0];
 const order1 = await api('/orders', {
   method: 'POST', token: guest.token, key: uid(),
   body: { eventId: withStock.id, tickets: [{ ticketTypeId: ticketType.id, qty: 1 }] },
@@ -179,6 +182,7 @@ check('стол помечен занятым', afterBooking.find((t) => t.id ==
 console.log('\n=== Списание со склада ===');
 const menu = (await api('/bar/menu')).body;
 const drink = menu.find((m) => m.available && m.category === 'cocktails');
+await topUpStock(api, admin.token, drink.id);
 const barOrder = await api('/orders', {
   method: 'POST', token: guest.token, key: uid(),
   body: { eventId: withStock.id, bar: [{ barItemId: drink.id, qty: 3 }] },

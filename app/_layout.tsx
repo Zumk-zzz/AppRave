@@ -44,8 +44,7 @@ export default function RootLayout() {
 
   useEffect(() => {
     void restore();
-    void loadStaff();
-  }, [restore, loadStaff]);
+  }, [restore]);
 
   useEffect(() => {
     // История заказов читается после входа: на сервере она принадлежит
@@ -54,6 +53,16 @@ export default function RootLayout() {
     // её каждый по отдельности и мигали.
     if (status === 'authed') void loadOrders();
   }, [status, loadOrders]);
+
+  const userId = user?.id;
+
+  useEffect(() => {
+    // Смена, журнал и стоп-лист принадлежат конкретному сотруднику:
+    // до входа запрашивать их не у кого. Следим за идентификатором,
+    // а не за всем объектом: начисление баллов меняет его на каждой
+    // покупке, и перечитывать журнал из-за этого незачем.
+    void loadStaff(status === 'authed' ? (useAuthStore.getState().user ?? null) : null);
+  }, [status, userId, loadStaff]);
 
   const role = effectiveRole(user?.staffRole, atWork);
 

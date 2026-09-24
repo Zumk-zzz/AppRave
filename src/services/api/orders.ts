@@ -74,10 +74,10 @@ export const apiOrdersService: OrdersService = {
     return mapOrder(order);
   },
 
-  async admit(order) {
+  async admit(order, manual = false) {
     const res = await request<{ order: ApiOrder }>(
       `/staff/scan/${encodeURIComponent(order.number)}/admit`,
-      { method: 'POST', body: {} },
+      { method: 'POST', body: { manual } },
     );
     return mapOrder(res.order);
   },

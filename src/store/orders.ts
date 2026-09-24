@@ -36,7 +36,7 @@ interface OrdersState {
   /** Заказ по номеру из QR. Для сканера: чужого заказа в кэше нет. */
   byNumber: (number: string) => Promise<Order | null>;
   /** Отметить проход: гасит все билетные строки разом. */
-  admit: (order: Order) => Promise<Order>;
+  admit: (order: Order, manual?: boolean) => Promise<Order>;
   /** Выдать единицы позиции бара. */
   issue: (order: Order, lineId: string, count: number) => Promise<Order>;
 
@@ -106,8 +106,8 @@ export const useOrdersStore = create<OrdersState>((set, get) => ({
     set({ orders: [], staffOrders: [], loaded: false });
   },
 
-  async admit(order) {
-    const fresh = await ordersService.admit(order);
+  async admit(order, manual) {
+    const fresh = await ordersService.admit(order, manual);
     merge(set, get, fresh);
     return fresh;
   },

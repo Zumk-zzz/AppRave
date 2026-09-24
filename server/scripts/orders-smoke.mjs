@@ -7,6 +7,8 @@
  *
  * Запуск: node scripts/orders-smoke.mjs
  */
+import { topUpStock, topUpTickets } from './top-up.mjs';
+
 const BASE = process.env.API_URL ?? 'http://localhost:3000';
 
 let failures = 0;
@@ -88,6 +90,9 @@ check('есть событие с билетами', !!event, event?.title);
 
 const menu = await api('/bar/menu');
 const drink = menu.body.find((m) => m.available);
+
+await topUpStock(api, admin.token, drink.id);
+await topUpTickets(api, admin.token, event.id, event.tickets[0].id);
 
 console.log('\n=== Покупка как в приложении ===');
 const created = await api('/orders', {

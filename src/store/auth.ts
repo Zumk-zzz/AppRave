@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import { can, effectiveRole, type Permission, type UserRole } from '@/src/lib/permissions';
 import { authService, setToken, type User } from '@/src/services';
 import { useOrdersStore } from './orders';
+import { useStaffStore } from './staff';
 
 const SESSION_KEY = 'apprave.session';
 const WORK_MODE_KEY = 'apprave.work-mode';
@@ -99,6 +100,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
 
     useOrdersStore.getState().clear();
+    useStaffStore.getState().clear();
     set({ user: null, atWork: false, status: 'guest' });
   },
 

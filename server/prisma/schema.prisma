@@ -381,7 +381,11 @@ model Shift {
 /// Отказ во входе. Фейсер видит пометку сразу при сканировании.
 model BanEntry {
   id        String   @id @default(uuid())
+  /// Нормализованный контакт: телефон или почта. Отказ выносится человеку,
+  /// а каким каналом он вошёл — его дело.
   phone     String   @unique
+  /// Имя на момент отказа: контакт может смениться, память должна остаться
+  name      String?
   reason    String
   createdBy String   @map("created_by")
   createdAt DateTime @default(now()) @map("created_at")

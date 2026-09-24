@@ -21,6 +21,20 @@ export async function staffRoutes(app: FastifyInstance) {
    * Отдельные коды на вход и на бар были бы хуже: гость показывал бы не тот,
    * а защиты это всё равно не даёт — её даёт право, а не вид кода.
    */
+  /**
+   * Действующий отказ по владельцу заказа.
+   *
+   * Ищем и по телефону, и по почте: отказ выносится человеку, а каким
+   * каналом он завёл аккаунт — его дело. Поиск только по телефону
+   * пропускал бы всех, кто вошёл по почте.
+   */
+  const banFor = async (user: { phone: string | null; email: string | null }) => {
+    const contacts = [user.phone, user.email].filter(Boolean) as string[];
+    if (contacts.length === 0) return null;
+
+    return db.banEntry.findFirst({ where: { phone: { in: contacts }, liftedAt: null } });
+  };
+
   app.get('/staff/scan/:number', async (req) => {
     const auth = requireUser(req);
     if (!can(auth.role, 'scan:entry') && !can(auth.role, 'scan:bar')) {
@@ -36,15 +50,15 @@ export async function staffRoutes(app: FastifyInstance) {
 
     if (!order) throw notFound('Заказ не найден');
 
-    const ban = order.user.phone
-      ? await db.banEntry.findFirst({ where: { phone: order.user.phone, liftedAt: null } })
-      : null;
+    const ban = await banFor(order.user);
 
     return {
       order: toScanDto(order),
       // Отказ во входе показывается сразу и крупно: фейсер не должен
       // искать эту информацию отдельно, когда очередь стоит
-      ban: ban ? { reason: ban.reason, since: ban.createdAt.toISOString() } : null,
+      ban: ban
+        ? { id: ban.id, reason: ban.reason, name: ban.name, since: ban.createdAt.toISOString() }
+        : null,
       allowed: {
         entry: can(auth.role, 'scan:entry'),
         bar: can(auth.role, 'scan:bar'),
@@ -65,9 +79,7 @@ export async function staffRoutes(app: FastifyInstance) {
       throw conflict('Заказ не оплачен', 'not_paid');
     }
 
-    const ban = order.user.phone
-      ? await db.banEntry.findFirst({ where: { phone: order.user.phone, liftedAt: null } })
-      : null;
+    const ban = await banFor(order.user);
     if (ban) throw conflict(`Отказ во входе: ${ban.reason}`, 'banned');
 
     const admitted = await db.$transaction(async (tx) => {
@@ -214,6 +226,8 @@ export async function staffRoutes(app: FastifyInstance) {
       kind: a.kind,
       actor: { name: a.actor.name, role: a.actor.role },
       orderId: a.orderId,
+      // Смена нужна, чтобы собрать итоги ночи по её записям
+      shiftId: a.shiftId,
       details: a.details,
       createdAt: a.createdAt.toISOString(),
     }));
@@ -304,35 +318,39 @@ export async function staffRoutes(app: FastifyInstance) {
 
   app.get('/staff/bans', async (req) => {
     requirePermission(req, 'scan:entry');
+    const { all } = z
+      .object({ all: z.coerce.boolean().default(false) })
+      .parse(req.query);
 
+    // Снятые отказы тоже показываем, когда просят: «этого уже прощали»
+    // — часть решения не меньшая, чем сам отказ
     const bans = await db.banEntry.findMany({
-      where: { liftedAt: null },
+      where: all ? {} : { liftedAt: null },
       orderBy: { createdAt: 'desc' },
+      take: 500,
     });
 
-    return bans.map((b) => ({
-      id: b.id,
-      phone: b.phone,
-      reason: b.reason,
-      createdAt: b.createdAt.toISOString(),
-    }));
+    return bans.map(toBanDto);
   });
 
   app.post('/staff/bans', async (req) => {
     const auth = requirePermission(req, 'scan:entry');
     const parsed = z
-      .object({ phone: contactSchema, reason: z.string().min(3).max(300) })
+      .object({
+        phone: contactSchema,
+        reason: z.string().min(3).max(300),
+        name: z.string().max(80).optional(),
+      })
       .parse(req.body);
     const phone = parseContact(parsed.phone).value;
-    const reason = parsed.reason;
 
     const ban = await db.banEntry.upsert({
       where: { phone },
-      update: { reason, liftedAt: null, createdBy: auth.sub },
-      create: { phone, reason, createdBy: auth.sub },
+      update: { reason: parsed.reason, name: parsed.name, liftedAt: null, createdBy: auth.sub },
+      create: { phone, reason: parsed.reason, name: parsed.name, createdBy: auth.sub },
     });
 
-    return { id: ban.id, phone: ban.phone, reason: ban.reason };
+    return toBanDto(ban);
   });
 
   app.delete('/staff/bans/:id', async (req) => {
@@ -340,8 +358,8 @@ export async function staffRoutes(app: FastifyInstance) {
     const { id } = z.object({ id: z.string() }).parse(req.params);
 
     // Снимаем отметкой, а не удалением: история отказов не должна пропадать
-    await db.banEntry.update({ where: { id }, data: { liftedAt: new Date() } });
-    return { ok: true };
+    const ban = await db.banEntry.update({ where: { id }, data: { liftedAt: new Date() } });
+    return toBanDto(ban);
   });
 
   // --- Списки на сегодня ---
@@ -428,6 +446,24 @@ async function loadScan(number: string) {
     include: { lines: true, event: true, bookings: true, user: true },
   });
   return order ? toScanDto(order) : null;
+}
+
+function toBanDto(ban: {
+  id: string;
+  phone: string;
+  name: string | null;
+  reason: string;
+  createdAt: Date;
+  liftedAt: Date | null;
+}) {
+  return {
+    id: ban.id,
+    contact: ban.phone,
+    name: ban.name,
+    reason: ban.reason,
+    createdAt: ban.createdAt.toISOString(),
+    liftedAt: ban.liftedAt?.toISOString() ?? null,
+  };
 }
 
 function toShiftDto(shift: { id: string; openedAt: Date; closedAt: Date | null; note: string | null }) {
