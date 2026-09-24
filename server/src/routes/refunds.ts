@@ -145,6 +145,12 @@ async function refundOrder(orderId: string): Promise<number | null> {
           },
         });
       }
+
+      // В строке видно, что вернулось, а что гость успел получить
+      await tx.orderLine.update({
+        where: { id: line.id },
+        data: { cancelledQty: line.cancelledQty + left },
+      });
     }
 
     await tx.tableBooking.updateMany({

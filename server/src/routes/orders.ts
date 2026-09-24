@@ -5,9 +5,10 @@ import { z } from 'zod';
 import { requireCustomer, requireUser } from '../auth/guard.js';
 import { db } from '../db.js';
 import { env } from '../env.js';
+import { isLive } from '../lib/events.js';
 import { badRequest, conflict, notFound } from '../lib/http-error.js';
 import { orderNumber } from '../lib/ids.js';
-import { pointsForPurchase } from '../lib/money.js';
+import { pointsForPurchase, tierForPoints } from '../lib/money.js';
 
 const createSchema = z.object({
   eventId: z.string().min(1),
@@ -53,6 +54,13 @@ export async function orderRoutes(app: FastifyInstance) {
 
     const event = await db.event.findUnique({ where: { id: body.eventId } });
     if (!event || event.status !== 'published') throw notFound('Событие недоступно');
+
+    // Прошедшую вечеринку нельзя купить задним числом. Проверка здесь,
+    // а не только в афише: афиша прячет, но прямой запрос с id проходил
+    // бы мимо, и в отчётах появились бы продажи после закрытия.
+    if (!isLive(event.startsAt)) {
+      throw conflict('Эта вечеринка уже прошла', 'event_finished');
+    }
 
     const expiresAt = new Date(Date.now() + env.RESERVATION_MINUTES * 60_000);
 
@@ -230,12 +238,17 @@ export async function orderRoutes(app: FastifyInstance) {
     const auth = requireUser(req);
     const { id } = z.object({ id: z.string() }).parse(req.params);
 
-    const order = await db.order.findUnique({ where: { id }, include: { lines: true } });
+    const order = await db.order.findUnique({
+      where: { id },
+      include: { lines: true, event: true },
+    });
     if (!order || order.userId !== auth.sub) throw notFound('Заказ не найден');
 
     if (order.status !== 'pending' && order.status !== 'paid') {
       throw conflict('Этот заказ уже нельзя отменить', 'not_cancellable');
     }
+
+    ensureCancellable(order.event?.startsAt);
 
     await releaseOrder(order.id, 'cancelled');
     return loadOrder(order.id);
@@ -257,12 +270,17 @@ export async function orderRoutes(app: FastifyInstance) {
       .object({ qty: z.number().int().min(1).max(50) })
       .parse(req.body ?? {});
 
-    const order = await db.order.findUnique({ where: { id }, include: { lines: true } });
+    const order = await db.order.findUnique({
+      where: { id },
+      include: { lines: true, event: true },
+    });
     if (!order || order.userId !== auth.sub) throw notFound('Заказ не найден');
 
     if (order.status !== 'pending' && order.status !== 'paid') {
       throw conflict('Этот заказ уже нельзя менять', 'not_cancellable');
     }
+
+    ensureCancellable(order.event?.startsAt);
 
     const line = order.lines.find((l) => l.id === lineId);
     if (!line) throw notFound('Позиция не найдена');
@@ -360,6 +378,29 @@ async function settleStatus(tx: Prisma.TransactionClient, orderId: string) {
 export { settleStatus };
 
 /**
+ * За сколько часов до начала закрывается отмена.
+ *
+ * К этому моменту клуб уже закупил алкоголь и вывел персонал, поэтому
+ * поздний возврат — его прямой убыток. Правило проверяется на сервере,
+ * а не только кнопкой в приложении: кнопку можно обойти запросом.
+ */
+export const REFUND_CUTOFF_HOURS = 24;
+
+function ensureCancellable(startsAt: Date | null | undefined): void {
+  if (!startsAt) return;
+
+  const hoursLeft = (startsAt.getTime() - Date.now()) / 3_600_000;
+
+  if (hoursLeft <= 0) throw conflict('Вечеринка уже прошла', 'event_started');
+  if (hoursLeft < REFUND_CUTOFF_HOURS) {
+    throw conflict(
+      `Отмена закрывается за ${REFUND_CUTOFF_HOURS} часа до начала`,
+      'too_late_to_cancel',
+    );
+  }
+}
+
+/**
  * Возвращает товар заказа в продажу и переводит заказ в конечный статус.
  *
  * Одна функция на отмену и на истечение резерва: расходятся они только
@@ -373,28 +414,41 @@ export async function releaseOrder(orderId: string, status: 'cancelled' | 'expir
     if (order.status !== 'pending' && order.status !== 'paid') return;
 
     for (const line of order.lines) {
+      // Возвращается только невыданное. Если гость успел забрать один
+      // коктейль из трёх, на склад уходят два: вернуть все три значило бы
+      // поставить на полку бутылку, которую уже выпили.
+      const left = leftOf(line);
+      if (left === 0) continue;
+
       if (line.kind === 'ticket' && line.ticketTypeId) {
         await tx.$executeRaw`
           UPDATE ticket_types
-             SET sold = GREATEST(0, sold - ${line.qty})
+             SET sold = GREATEST(0, sold - ${left})
            WHERE id = ${line.ticketTypeId}
         `;
       }
 
       if (line.kind === 'bar' && line.barItemId) {
         await tx.$executeRaw`
-          UPDATE stock SET qty = qty + ${line.qty} WHERE bar_item_id = ${line.barItemId}
+          UPDATE stock SET qty = qty + ${left} WHERE bar_item_id = ${line.barItemId}
         `;
         await tx.stockMove.create({
           data: {
             barItemId: line.barItemId,
             kind: 'refund',
-            delta: line.qty,
+            delta: left,
             orderId: order.id,
             comment: status === 'expired' ? 'Резерв истёк' : 'Отмена заказа',
           },
         });
       }
+
+      // Отмеченное отменённым прямо в строке: иначе по составу заказа
+      // не видно, что именно вернулось, а что гость успел получить
+      await tx.orderLine.update({
+        where: { id: line.id },
+        data: { cancelledQty: line.cancelledQty + left },
+      });
     }
 
     await tx.tableBooking.updateMany({
@@ -403,6 +457,20 @@ export async function releaseOrder(orderId: string, status: 'cancelled' | 'expir
     });
 
     await tx.order.update({ where: { id: order.id }, data: { status, expiresAt: null } });
+
+    // Баллы уходят вместе с покупкой. Иначе отмена превращается
+    // в способ их накрутить: купил, получил начисление, отменил.
+    // Начисляются они при оплате, поэтому у истёкшего резерва снимать
+    // нечего — там pointsEarned ещё не попал на счёт.
+    if (order.paidAt && order.pointsEarned > 0) {
+      const user = await tx.user.findUniqueOrThrow({ where: { id: order.userId } });
+      const points = Math.max(0, user.points - order.pointsEarned);
+
+      await tx.user.update({
+        where: { id: user.id },
+        data: { points, tier: tierForPoints(points) },
+      });
+    }
   });
 }
 

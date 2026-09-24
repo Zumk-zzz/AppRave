@@ -10,7 +10,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "test": "node scripts/order-status.test.mjs"
+    "test": "node scripts/order-status.test.mjs && node scripts/phone.test.mjs"
   },
   "dependencies": {
     "@expo-google-fonts/inter": "^0.4.2",

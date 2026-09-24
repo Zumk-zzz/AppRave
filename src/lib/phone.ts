@@ -33,6 +33,29 @@ export function formatPhone(digits: string): string {
   return out;
 }
 
+/**
+ * Новое состояние поля после правки.
+ *
+ * Разбирается со стиранием разделителей. В поле лежит «+7 (916)»,
+ * пользователь жмёт Backspace и стирает скобку — цифры при этом те же,
+ * маска собирается заново, и на экране ничего не меняется. Выглядит
+ * как зависшее поле: приходится вручную переставлять курсор левее
+ * скобки и жать ещё раз.
+ *
+ * Отличить это можно по длине: строка стала короче, а цифр столько же —
+ * значит убрали разделитель, и на самом деле человек хотел стереть
+ * цифру перед ним.
+ */
+export function applyPhoneEdit(current: string, input: string): string {
+  const next = extractDigits(input);
+
+  if (input.length < formatPhone(current).length && next === current) {
+    return current.slice(0, -1);
+  }
+
+  return next;
+}
+
 /** Формат для отправки на сервер: +79161234567 */
 export function toE164(digits: string): string {
   return `+7${digits}`;

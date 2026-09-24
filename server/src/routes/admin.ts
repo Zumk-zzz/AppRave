@@ -167,13 +167,18 @@ export async function adminRoutes(app: FastifyInstance) {
     requirePermission(req, 'catalog:write');
     const { id } = z.object({ id: z.string() }).parse(req.params);
 
+    const event = await db.event.findUnique({ where: { id } });
+    if (!event) throw notFound('Событие не найдено');
+
     const orders = await db.order.count({ where: { eventId: id } });
     if (orders > 0) {
       // Удаление оторвало бы заказы от события, и у гостя в билете
-      // пропали бы название и дата. Снятие с публикации делает то же
-      // самое для афиши, ничего не ломая.
+      // пропали бы название и дата. Отменённая вечеринка и так исчезает
+      // из афиши — в управлении она лежит на своей вкладке.
       throw conflict(
-        'По этой вечеринке есть заказы — снимите её с публикации',
+        event.status === 'cancelled'
+          ? 'Вечеринка отменена и в афише её нет. Удалить нельзя: по ней есть заказы, и в билетах гостей пропали бы название и дата'
+          : 'По этой вечеринке есть заказы — переведите её в «Отменена»',
         'event_has_orders',
       );
     }

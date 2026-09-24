@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
 
 import { Badge, Button, Card, Chip, ChipRow, Screen, Stepper, Text } from '@/src/components';
+import { isLive } from '@/src/lib/events';
 import { formatEventDate, pluralWithCount } from '@/src/lib/format';
 import {
   describe,
@@ -59,8 +60,14 @@ export default function AdminScan() {
   const [busy, setBusy] = useState(false);
   const locked = useRef(false);
 
+  // Работают с той вечеринкой, что идёт или вот-вот начнётся.
+  // У админа каталог содержит и прошедшие, и черновики — в выборе
+  // события на смене им делать нечего.
   const upcoming = useMemo(
-    () => [...events].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()),
+    () =>
+      events
+        .filter((e) => isLive(e.date) && (e.status ?? 'published') === 'published')
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()),
     [events],
   );
 

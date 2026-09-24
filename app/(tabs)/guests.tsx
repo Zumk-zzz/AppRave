@@ -5,6 +5,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { Alert, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { Badge, Button, Card, Chip, ChipRow, Field, Screen, Segmented, Sheet, Text } from '@/src/components';
+import { isLive } from '@/src/lib/events';
 import { pluralWithCount } from '@/src/lib/format';
 import { eventsService, type ClubEvent, type Order } from '@/src/services';
 import { formatContact } from '@/src/lib/contact';
@@ -41,7 +42,11 @@ export default function GuestsTab() {
   useFocusEffect(
     useCallback(() => {
       void (async () => {
-        const list = await eventsService.list();
+        // Прошедшие и черновики сюда не нужны: на смене работают
+        // с той вечеринкой, которая идёт сейчас
+        const list = (await eventsService.list()).filter(
+          (e) => isLive(e.date) && (e.status ?? 'published') === 'published',
+        );
         setEvents(list);
         setEventId((current) => current ?? list[0]?.id ?? null);
       })();

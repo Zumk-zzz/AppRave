@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
 import { readAuth } from '../auth/guard.js';
+import { liveFilter } from '../lib/events.js';
 import { can, effectiveRole } from '../lib/permissions.js';
 import { db } from '../db.js';
 import { notFound } from '../lib/http-error.js';
@@ -16,8 +17,11 @@ export async function catalogRoutes(app: FastifyInstance) {
     // чём: афишу готовят днём, а не в зале.
     const mayEdit = can(effectiveRole(readAuth(req)?.staffRole), 'catalog:write');
 
+    // Гостю — только то, что ещё впереди. Прошедшие вечеринки никуда
+    // не деваются: они остаются в заказах и в админской истории, но
+    // в афише им делать нечего.
     const events = await db.event.findMany({
-      where: mayEdit ? {} : { status: 'published' },
+      where: mayEdit ? {} : { status: 'published', ...liveFilter() },
       orderBy: { startsAt: 'asc' },
       include: { ticketTypes: { orderBy: { priceKopecks: 'asc' } } },
     });

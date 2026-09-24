@@ -6,7 +6,7 @@ import { Alert, StyleSheet, View } from 'react-native';
 import { Badge, Button, Card, Field, Screen, SectionHeader, Segmented, Sheet, Text } from '@/src/components';
 import { AdminHeader } from '@/src/features/admin/AdminHeader';
 import { formatContact } from '@/src/lib/contact';
-import { extractDigits, formatPhone, isPhoneComplete, toE164 } from '@/src/lib/phone';
+import { applyPhoneEdit, formatPhone, isPhoneComplete, toE164 } from '@/src/lib/phone';
 import {
   ASSIGNABLE_ROLES,
   ROLE_DESCRIPTION,
@@ -150,7 +150,7 @@ export default function AdminStaff() {
           <Field
             label="Телефон"
             value={formatPhone(digits)}
-            onChangeText={(text) => setDigits(extractDigits(text))}
+            onChangeText={(text) => setDigits(applyPhoneEdit(digits, text))}
             placeholder="+7 (___) ___-__-__"
             keyboardType="number-pad"
             hint="Роль выдаётся на номер: сотрудник получит её при первом входе"

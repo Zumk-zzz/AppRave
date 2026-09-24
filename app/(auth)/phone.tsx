@@ -5,7 +5,7 @@ import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, TextInput, View 
 
 import { Button, Screen, Segmented, Text } from '@/src/components';
 import { formatContact } from '@/src/lib/contact';
-import { extractDigits, formatPhone, isPhoneComplete, toE164 } from '@/src/lib/phone';
+import { applyPhoneEdit, formatPhone, isPhoneComplete, toE164 } from '@/src/lib/phone';
 import { authService } from '@/src/services';
 import { colors, fonts, radius, spacing } from '@/src/theme';
 
@@ -94,7 +94,7 @@ export default function ContactScreen() {
             <TextInput
               value={formatPhone(digits)}
               onChangeText={(next) => {
-                setDigits(extractDigits(next));
+                setDigits(applyPhoneEdit(digits, next));
                 setError(null);
               }}
               placeholder="+7 (900) 000-00-00"

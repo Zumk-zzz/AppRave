@@ -1,3 +1,4 @@
+import { isLive } from '@/src/lib/events';
 import { mockCatalog } from './catalog.mock';
 import { currentActor } from './session';
 import type { ClubEvent, EventsService } from './types';
@@ -20,8 +21,11 @@ function byDateAsc(a: ClubEvent, b: ClubEvent) {
  * это ровно тот же вопрос «кто сейчас работает», только без сети.
  */
 function visible(event: ClubEvent): boolean {
-  if ((event.status ?? 'published') === 'published') return true;
-  return !!currentActor()?.staffRole;
+  // Сотруднику видно всё: он готовит черновики и разбирается
+  // с отменёнными. Гостю — только то, что ещё не закончилось.
+  if (currentActor()?.staffRole) return true;
+
+  return (event.status ?? 'published') === 'published' && isLive(event.date);
 }
 
 export const mockEventsService: EventsService = {
