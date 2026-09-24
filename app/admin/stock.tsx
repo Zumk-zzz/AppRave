@@ -3,7 +3,7 @@ import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import * as Haptics from 'expo-haptics';
 import { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Alert, StyleSheet, View } from 'react-native';
 
 import {
   Badge,
@@ -19,7 +19,7 @@ import {
 } from '@/src/components';
 import { AdminHeader } from '@/src/features/admin/AdminHeader';
 import { deltaFor, isLowStock, MANUAL_MOVE_KINDS, MOVE_LABEL, MOVE_TONE } from '@/src/lib/inventory';
-import { inventoryService, type BarItem, type StockItem, type StockMoveKind } from '@/src/services';
+import type { BarItem, StockAdjustKind, StockItem } from '@/src/services';
 import { useCatalogStore } from '@/src/store/catalog';
 import { colors, spacing } from '@/src/theme';
 
@@ -27,9 +27,10 @@ export default function AdminStock() {
   const barMenu = useCatalogStore((s) => s.barMenu);
   const stock = useCatalogStore((s) => s.stock);
   const moves = useCatalogStore((s) => s.moves);
+  const applyStockMove = useCatalogStore((s) => s.applyStockMove);
 
   const [editing, setEditing] = useState<{ item: BarItem; stock: StockItem } | null>(null);
-  const [kind, setKind] = useState<StockMoveKind>('receipt');
+  const [kind, setKind] = useState<StockAdjustKind>('receipt');
   const [amount, setAmount] = useState(0);
   const [comment, setComment] = useState('');
   const [applying, setApplying] = useState(false);
@@ -55,15 +56,22 @@ export default function AdminStock() {
     }
 
     setApplying(true);
-    await inventoryService.apply({
-      barItemId: editing.item.id,
-      kind,
-      delta,
-      comment: comment.trim() || undefined,
-    });
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setApplying(false);
-    setEditing(null);
+    try {
+      await applyStockMove({
+        barItemId: editing.item.id,
+        kind,
+        delta,
+        comment: comment.trim() || undefined,
+      });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setEditing(null);
+    } catch (e) {
+      // Списать больше, чем есть, сервер не даст — и правильно сделает
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert('Не получилось', e instanceof Error ? e.message : 'Попробуйте ещё раз');
+    } finally {
+      setApplying(false);
+    }
   };
 
   return (

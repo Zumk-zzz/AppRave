@@ -1,49 +1,66 @@
-import { useCatalogStore } from '@/src/store/catalog';
+import { mockCatalog } from './catalog.mock';
 import type { AdminService } from './types';
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * Операции записи в каталог.
+ * Правка каталога без сервера.
  *
- * Отдельный сервис, а не методы в EventsService и BarService: чтение
- * доступно всем, запись — только администратору, и разделение на уровне
- * интерфейса делает это очевидным в коде, а не только в UI.
+ * Отдельный сервис, а не методы в EventsService и BarService: читать
+ * может кто угодно, править — только по праву, и разделение на уровне
+ * интерфейса делает это очевидным в коде, а не только в интерфейсе.
+ *
+ * Создание и обновление здесь делают одно и то же: в файле на телефоне
+ * различать их незачем. На сервере это разные операции.
  */
 export const mockAdminService: AdminService = {
-  async saveEvent(event) {
+  async createEvent(event) {
     await delay(300);
-    await useCatalogStore.getState().saveEvent(event);
+    await mockCatalog.saveEvent(event);
+  },
+
+  async updateEvent(event) {
+    await delay(300);
+    await mockCatalog.saveEvent(event);
   },
 
   async deleteEvent(id) {
     await delay(250);
-    await useCatalogStore.getState().deleteEvent(id);
+    await mockCatalog.deleteEvent(id);
   },
 
-  async saveBarItem(item, stock) {
+  async createBarItem(item, stock) {
     await delay(300);
-    await useCatalogStore.getState().saveBarItem(item, stock);
+    await mockCatalog.saveBarItem(item, stock);
+  },
+
+  async updateBarItem(item, stock) {
+    await delay(300);
+    await mockCatalog.saveBarItem(item, stock);
   },
 
   async deleteBarItem(id) {
     await delay(250);
-    await useCatalogStore.getState().deleteBarItem(id);
+    await mockCatalog.deleteBarItem(id);
   },
 
-  async saveTable(table) {
+  async tables() {
+    await delay(200);
+    return mockCatalog.tables();
+  },
+
+  async createTable(table) {
     await delay(250);
-    const { taken, ...layout } = table;
-    void taken; // занятость вычисляется на дату, в каталоге не хранится
-    await useCatalogStore.getState().saveTable(layout);
+    await mockCatalog.saveTable(table);
   },
 
-  async consumeTickets(eventId, ticketTypeId, qty) {
-    await useCatalogStore.getState().consumeTickets(eventId, ticketTypeId, qty);
+  async updateTable(table) {
+    await delay(250);
+    await mockCatalog.saveTable(table);
   },
 
   async resetCatalog() {
     await delay(300);
-    await useCatalogStore.getState().reset();
+    await mockCatalog.reset();
   },
 };

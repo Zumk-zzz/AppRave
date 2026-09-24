@@ -6,6 +6,7 @@ import { db } from './db.js';
 import { env, isProd } from './env.js';
 import { startExpirationJob } from './jobs/expire-reservations.js';
 import { HttpError } from './lib/http-error.js';
+import { adminRoutes } from './routes/admin.js';
 import { authRoutes } from './routes/auth.js';
 import { catalogRoutes } from './routes/catalog.js';
 import { orderRoutes } from './routes/orders.js';
@@ -74,6 +75,7 @@ app.get('/health', async () => {
 
 await app.register(authRoutes);
 await app.register(catalogRoutes);
+await app.register(adminRoutes);
 await app.register(orderRoutes);
 await app.register(paymentRoutes);
 await app.register(staffRoutes);

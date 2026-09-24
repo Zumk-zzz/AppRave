@@ -20,7 +20,7 @@ import { AdminHeader } from '@/src/features/admin/AdminHeader';
 import { CoverPicker } from '@/src/features/admin/CoverPicker';
 import { GENRE_LABEL } from '@/src/lib/events';
 import { formatEventDate } from '@/src/lib/format';
-import { adminService, type ClubEvent, type Genre, type TicketType } from '@/src/services';
+import type { ClubEvent, Genre, TicketType } from '@/src/services';
 import { useCatalogStore } from '@/src/store/catalog';
 import { colors, fonts, fontSize, radius, spacing } from '@/src/theme';
 
@@ -42,9 +42,21 @@ function blankEvent(): ClubEvent {
     description: '',
     cover: DEFAULT_COVER,
     tickets: [
-      { id: 'tt_standard', name: 'Standard', description: 'Вход до 01:00', price: 1500, available: 50 },
+      {
+        id: 'tt_standard',
+        name: 'Standard',
+        description: 'Вход до 01:00',
+        price: 1500,
+        quantity: 50,
+        available: 50,
+      },
     ],
   };
+}
+
+/** Сколько уже продано: тираж минус остаток. */
+function soldOf(ticket: TicketType): number {
+  return Math.max(0, (ticket.quantity ?? ticket.available) - ticket.available);
 }
 
 export default function AdminEventForm() {
@@ -57,6 +69,9 @@ export default function AdminEventForm() {
   const [draft, setDraft] = useState<ClubEvent>(() =>
     existing ? structuredClone(existing) : blankEvent(),
   );
+  const saveEvent = useCatalogStore((s) => s.saveEvent);
+  const deleteEvent = useCatalogStore((s) => s.deleteEvent);
+
   const [dj, setDj] = useState('');
   const [saving, setSaving] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -94,6 +109,7 @@ export default function AdminEventForm() {
           name: '',
           description: '',
           price: 1000,
+          quantity: 30,
           available: 30,
         },
       ],
@@ -108,10 +124,16 @@ export default function AdminEventForm() {
     }
 
     setSaving(true);
-    await adminService.saveEvent(draft);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setSaving(false);
-    router.back();
+    try {
+      await saveEvent(draft, isNew);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      router.back();
+    } catch (e) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert('Не получилось', e instanceof Error ? e.message : 'Попробуйте ещё раз');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleDelete = () => {
@@ -124,8 +146,15 @@ export default function AdminEventForm() {
           text: 'Удалить',
           style: 'destructive',
           onPress: async () => {
-            await adminService.deleteEvent(draft.id);
-            router.back();
+            try {
+              await deleteEvent(draft.id);
+              router.back();
+            } catch (e) {
+              // По вечеринке с заказами удаление запрещено: у гостей на
+              // руках билеты, и без события в них не останется ни названия,
+              // ни даты. Сервер отвечает, что делать вместо этого.
+              Alert.alert('Не получилось', e instanceof Error ? e.message : 'Попробуйте ещё раз');
+            }
           },
         },
       ],
@@ -318,14 +347,22 @@ export default function AdminEventForm() {
                 />
               </View>
               <View style={styles.flex}>
+                {/* Правится тираж, а не остаток: продано столько, сколько
+                    продано, и правка тиража это число не трогает */}
                 <NumberField
-                  label="Количество"
-                  value={ticket.available}
-                  onChangeValue={(available) => patchTicket(i, { available })}
+                  label="Выпущено"
+                  value={ticket.quantity ?? ticket.available}
+                  onChangeValue={(quantity) => patchTicket(i, { quantity })}
                   suffix="шт"
                 />
               </View>
             </View>
+
+            {soldOf(ticket) > 0 && (
+              <Text variant="caption" tone="faint">
+                Продано {soldOf(ticket)} · осталось {ticket.available}
+              </Text>
+            )}
           </Card>
         ))}
       </View>

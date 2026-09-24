@@ -6,7 +6,7 @@ import { Alert, StyleSheet, View } from 'react-native';
 import { Button, Field, NumberField, Screen, Segmented, Toggle } from '@/src/components';
 import { CATEGORY_LABEL, CATEGORY_ORDER } from '@/src/data/bar';
 import { AdminHeader } from '@/src/features/admin/AdminHeader';
-import { adminService, type BarCategory, type BarItem, type StockItem } from '@/src/services';
+import type { BarCategory, BarItem, StockItem } from '@/src/services';
 import { useCatalogStore } from '@/src/store/catalog';
 import { spacing } from '@/src/theme';
 
@@ -39,6 +39,9 @@ export default function AdminBarItemForm() {
     unit: existingStock?.unit ?? 'шт',
     lowThreshold: existingStock?.lowThreshold ?? 5,
   }));
+  const saveBarItem = useCatalogStore((s) => s.saveBarItem);
+  const deleteBarItem = useCatalogStore((s) => s.deleteBarItem);
+
   const [saving, setSaving] = useState(false);
   const [showError, setShowError] = useState(false);
 
@@ -54,10 +57,16 @@ export default function AdminBarItemForm() {
     }
 
     setSaving(true);
-    await adminService.saveBarItem(draft, stock);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setSaving(false);
-    router.back();
+    try {
+      await saveBarItem(draft, isNew, stock);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      router.back();
+    } catch (e) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert('Не получилось', e instanceof Error ? e.message : 'Попробуйте ещё раз');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleDelete = () => {
@@ -67,8 +76,14 @@ export default function AdminBarItemForm() {
         text: 'Удалить',
         style: 'destructive',
         onPress: async () => {
-          await adminService.deleteBarItem(draft.id);
-          router.back();
+          try {
+            await deleteBarItem(draft.id);
+            router.back();
+          } catch (e) {
+            // Проданную позицию сервер удалить не даст: история продаж
+            // должна сходиться. Он же подскажет, что делать вместо этого.
+            Alert.alert('Не получилось', e instanceof Error ? e.message : 'Попробуйте ещё раз');
+          }
         },
       },
     ]);

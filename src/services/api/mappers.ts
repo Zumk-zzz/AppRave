@@ -5,6 +5,9 @@ import type {
   Order,
   OrderLine,
   OrderStatus,
+  StockItem,
+  StockMove,
+  TableLayout,
   User,
 } from '@/src/services/types';
 
@@ -18,6 +21,10 @@ import type {
  */
 
 const toRubles = (kopecks: number): number => Math.round(kopecks) / 100;
+
+/** Обратный перевод, для отправки на сервер. Округление обязательно:
+ *  рубль с копейками, умноженный на сто, в double даёт 8999.999999. */
+export const toKopecks = (rubles: number): number => Math.round(rubles * 100);
 
 interface ApiEvent {
   id: string;
@@ -57,6 +64,7 @@ export function mapEvent(e: ApiEvent): ClubEvent {
       description: t.description,
       price: toRubles(t.priceKopecks),
       available: t.available,
+      quantity: t.quantity,
     })),
   };
 }
@@ -219,4 +227,75 @@ function mapOrderLine(l: ApiOrderLine): OrderLine {
   };
 }
 
-export type { ApiBarItem, ApiEvent, ApiOrder, ApiTable, ApiUser };
+interface ApiTableLayout {
+  id: string;
+  label: string;
+  zone: ClubTable['zone'];
+  seats: number;
+  depositKopecks: number;
+  blocked: boolean;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** Стол в схеме зала: без события занятости не существует. */
+export function mapTableLayout(t: ApiTableLayout): TableLayout {
+  return {
+    id: t.id,
+    label: t.label,
+    zone: t.zone,
+    seats: t.seats,
+    deposit: toRubles(t.depositKopecks),
+    blocked: t.blocked,
+    x: t.x,
+    y: t.y,
+    w: t.w,
+    h: t.h,
+  };
+}
+
+interface ApiStockItem {
+  barItemId: string;
+  qty: number;
+  unit: string;
+  lowThreshold: number;
+}
+
+export function mapStockItem(s: ApiStockItem): StockItem {
+  return { barItemId: s.barItemId, qty: s.qty, unit: s.unit, lowThreshold: s.lowThreshold };
+}
+
+interface ApiStockMove {
+  id: string;
+  barItemId: string;
+  kind: StockMove['kind'];
+  delta: number;
+  comment: string | null;
+  orderId: string | null;
+  createdAt: string;
+}
+
+export function mapStockMove(m: ApiStockMove): StockMove {
+  return {
+    id: m.id,
+    barItemId: m.barItemId,
+    kind: m.kind,
+    delta: m.delta,
+    comment: m.comment ?? undefined,
+    orderId: m.orderId ?? undefined,
+    createdAt: m.createdAt,
+  };
+}
+
+export type {
+  ApiBarItem,
+  ApiEvent,
+  ApiOrder,
+  ApiStockItem,
+  ApiStockMove,
+  ApiTable,
+  ApiTableLayout,
+  ApiUser,
+};

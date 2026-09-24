@@ -41,8 +41,16 @@ export interface TicketType {
   name: string;
   description: string;
   price: number;
-  /** Сколько осталось. 0 — распродано. */
+  /** Сколько осталось. 0 — распродано. Считается, а не хранится. */
   available: number;
+  /**
+   * Сколько выпущено. Это и правит администратор.
+   *
+   * Отдельно от остатка: правка тиража во время продаж не должна
+   * затирать проданное. У записей, сделанных до появления поля, его нет —
+   * тогда тираж равен остатку.
+   */
+  quantity?: number;
 }
 
 export interface ClubEvent {
@@ -223,7 +231,15 @@ export interface BookingService {
   tablesFor(eventId: string): Promise<ClubTable[]>;
 }
 
-export type StockMoveKind = 'receipt' | 'writeoff' | 'sale' | 'correction';
+export type StockMoveKind = 'receipt' | 'writeoff' | 'sale' | 'refund' | 'correction';
+
+/**
+ * Движения, которые заводит человек.
+ *
+ * Продажу и возврат пишет сам заказ, в одной транзакции со списанием —
+ * руками их не заводят, иначе склад разошёлся бы с продажами.
+ */
+export type StockAdjustKind = 'receipt' | 'writeoff' | 'correction';
 
 export interface StockItem {
   barItemId: string;
@@ -251,28 +267,51 @@ export interface InventoryService {
   stock(): Promise<StockItem[]>;
   /** Журнал движений, новые первыми. Без аргумента — по всем позициям. */
   moves(barItemId?: string): Promise<StockMove[]>;
+  /**
+   * Приход, списание, инвентаризация.
+   *
+   * Продажи и возвраты сюда не ходят: их пишет сам заказ, в одной
+   * транзакции со списанием. Отдельный вызов из приложения означал бы,
+   * что склад и продажа могут разойтись при обрыве связи.
+   */
   apply(input: {
     barItemId: string;
-    kind: StockMoveKind;
+    kind: StockAdjustKind;
     delta: number;
     comment?: string;
-    orderId?: string;
   }): Promise<void>;
 }
 
-/** Операции записи. Доступны только пользователю с ролью admin. */
+/** Стол без привязки к дате: так его видит и правит администратор. */
+export type TableLayout = Omit<ClubTable, 'taken'>;
+
+/**
+ * Правка каталога. Доступна только тому, у кого есть право `catalog:write`.
+ *
+ * Создание и обновление разделены намеренно. Одна ручка «сохранить»
+ * решала бы, что делать, по наличию идентификатора, а у нового события
+ * он берётся из времени на телефоне — и однажды совпал бы с чужим.
+ */
 export interface AdminService {
-  saveEvent(event: ClubEvent): Promise<void>;
+  createEvent(event: ClubEvent): Promise<void>;
+  updateEvent(event: ClubEvent): Promise<void>;
   deleteEvent(id: string): Promise<void>;
-  saveBarItem(item: BarItem, stock?: Partial<StockItem>): Promise<void>;
+
+  createBarItem(item: BarItem, stock?: Partial<StockItem>): Promise<void>;
+  updateBarItem(item: BarItem, stock?: Partial<StockItem>): Promise<void>;
   deleteBarItem(id: string): Promise<void>;
-  saveTable(table: ClubTable): Promise<void>;
+
+  /** Схема зала целиком: без события и без занятости. */
+  tables(): Promise<TableLayout[]>;
+  createTable(table: TableLayout): Promise<void>;
+  updateTable(table: TableLayout): Promise<void>;
+
   /**
-   * Изменить остаток билетов. Положительное qty — продажа,
-   * отрицательное — возврат при отмене заказа.
+   * Вернуть каталог к демонстрационным данным.
+   *
+   * Только для автономного режима. На сервере это стёрло бы проданное
+   * вместе с историей, поэтому там ручки нет вовсе.
    */
-  consumeTickets(eventId: string, ticketTypeId: string, qty: number): Promise<void>;
-  /** Вернуть каталог к демонстрационным данным */
   resetCatalog(): Promise<void>;
 }
 

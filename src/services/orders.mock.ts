@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { pointsForPurchase } from '@/src/lib/loyalty';
 import { deriveStatus, redeemableOf } from '@/src/lib/order-status';
-import { useCatalogStore } from '@/src/store/catalog';
+import { mockCatalog } from './catalog.mock';
 import type { CheckoutItem, Order, OrderLine, OrdersService } from './types';
 
 /**
@@ -192,10 +192,8 @@ function withStatus(order: Order): Order {
 async function moveGoods(order: Order, line: OrderLine, delta: number): Promise<void> {
   if (delta === 0) return;
 
-  const catalog = useCatalogStore.getState();
-
   if (line.kind === 'bar') {
-    await catalog.applyStockMove({
+    await mockCatalog.applyStockMove({
       barItemId: line.refId,
       kind: delta < 0 ? 'sale' : 'correction',
       delta,
@@ -206,7 +204,7 @@ async function moveGoods(order: Order, line: OrderLine, delta: number): Promise<
 
   if (line.kind === 'ticket' && order.eventId) {
     // Положительное количество для каталога — продажа, поэтому знак обратный
-    await catalog.consumeTickets(order.eventId, line.refId, -delta);
+    await mockCatalog.consumeTickets(order.eventId, line.refId, -delta);
   }
 }
 

@@ -7,7 +7,7 @@ import { Alert, Pressable, StyleSheet, View } from 'react-native';
 import { Badge, Button, Card, Screen, Text } from '@/src/components';
 import { AdminHeader } from '@/src/features/admin/AdminHeader';
 import { formatPrice } from '@/src/lib/format';
-import { adminService } from '@/src/services';
+import { getDataSource } from '@/src/services';
 import { useCan } from '@/src/store/auth';
 import { useCatalogStore } from '@/src/store/catalog';
 import { useOrdersStore } from '@/src/store/orders';
@@ -29,7 +29,14 @@ export default function AdminDashboard() {
     }, [loadStaff]),
   );
 
+  const resetCatalog = useCatalogStore((s) => s.reset);
+
   const [resetting, setResetting] = useState(false);
+
+  // На сервере сброса нет намеренно: он стёр бы проданное вместе
+  // с историей. В автономном режиме каталог лежит на телефоне, и без
+  // сброса удалённое не вернуть иначе как переустановкой приложения.
+  const canReset = getDataSource() === 'mock';
 
   const revenue = orders.reduce((sum, o) => sum + o.total, 0);
   const lowStock = stock.filter((s) => s.qty <= s.lowThreshold);
@@ -45,9 +52,12 @@ export default function AdminDashboard() {
           style: 'destructive',
           onPress: async () => {
             setResetting(true);
-            await adminService.resetCatalog();
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            setResetting(false);
+            try {
+              await resetCatalog();
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            } finally {
+              setResetting(false);
+            }
           },
         },
       ],
@@ -120,21 +130,23 @@ export default function AdminDashboard() {
         />
       </View>
 
-      {/* Без сброса удалённый каталог не восстановить иначе как
-          переустановкой приложения */}
-      <Button
-        label={resetting ? 'Восстановление…' : 'Сбросить к демо-данным'}
-        variant="outline"
-        fullWidth
-        loading={resetting}
-        onPress={handleReset}
-        style={styles.reset}
-      />
+      {canReset && (
+        <>
+          <Button
+            label={resetting ? 'Восстановление…' : 'Сбросить к демо-данным'}
+            variant="outline"
+            fullWidth
+            loading={resetting}
+            onPress={handleReset}
+            style={styles.reset}
+          />
 
-      <Text variant="caption" tone="faint" style={styles.resetNote}>
-        Вернёт афишу, меню, столы и склад в исходное состояние.{'\n'}
-        Заказы гостей и баллы не тронет.
-      </Text>
+          <Text variant="caption" tone="faint" style={styles.resetNote}>
+            Вернёт афишу, меню, столы и склад в исходное состояние.{'\n'}
+            Заказы гостей и баллы не тронет.
+          </Text>
+        </>
+      )}
     </Screen>
   );
 }

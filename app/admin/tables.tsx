@@ -1,6 +1,6 @@
 import * as Haptics from 'expo-haptics';
 import { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Alert, StyleSheet, View } from 'react-native';
 
 import {
   Badge,
@@ -17,7 +17,7 @@ import {
 import { ZONE_LABEL } from '@/src/data/tables';
 import { AdminHeader } from '@/src/features/admin/AdminHeader';
 import { formatPrice, pluralWithCount } from '@/src/lib/format';
-import { adminService, type TableZone } from '@/src/services';
+import type { TableZone } from '@/src/services';
 import { useCatalogStore, type TableLayout } from '@/src/store/catalog';
 import { colors, spacing } from '@/src/theme';
 
@@ -25,6 +25,7 @@ const ZONES: TableZone[] = ['vip', 'lounge', 'bar'];
 
 export default function AdminTables() {
   const tables = useCatalogStore((s) => s.tables);
+  const saveTable = useCatalogStore((s) => s.saveTable);
 
   const [draft, setDraft] = useState<TableLayout | null>(null);
   const [saving, setSaving] = useState(false);
@@ -33,12 +34,19 @@ export default function AdminTables() {
 
   const handleSave = async () => {
     if (!draft) return;
+
     setSaving(true);
-    // taken вычисляется на дату, поэтому в каталог уходит только раскладка
-    await adminService.saveTable({ ...draft, taken: false });
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setSaving(false);
-    setDraft(null);
+    try {
+      // Столы заводятся вместе с залом, здесь их только правят
+      await saveTable(draft, false);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setDraft(null);
+    } catch (e) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert('Не получилось', e instanceof Error ? e.message : 'Попробуйте ещё раз');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (

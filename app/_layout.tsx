@@ -44,11 +44,8 @@ export default function RootLayout() {
 
   useEffect(() => {
     void restore();
-    // Каталог должен быть в памяти раньше первого вызова сервиса — они
-    // читают именно из него, а не из констант.
-    void loadCatalog();
     void loadStaff();
-  }, [restore, loadCatalog, loadStaff]);
+  }, [restore, loadStaff]);
 
   useEffect(() => {
     // История заказов читается после входа: на сервере она принадлежит
@@ -57,6 +54,15 @@ export default function RootLayout() {
     // её каждый по отдельности и мигали.
     if (status === 'authed') void loadOrders();
   }, [status, loadOrders]);
+
+  const role = effectiveRole(user?.staffRole, atWork);
+
+  useEffect(() => {
+    // Каталог перечитывается при смене действующей роли: сотрудник,
+    // вставший на смену, должен увидеть склад и схему зала, а гостю
+    // они не положены — сервер их ему и не отдаст.
+    void loadCatalog(can(role, 'catalog:write') || can(role, 'stock:write'));
+  }, [role, loadCatalog]);
 
   const fontsReady = fontsLoaded || fontError;
   const authReady = status !== 'loading';
@@ -74,7 +80,6 @@ export default function RootLayout() {
   }
 
   const isAuthed = status === 'authed';
-  const role = effectiveRole(user?.staffRole, atWork);
 
   // Маршруты закрываются по правам, а не по названию роли: менеджер
   // и админ попадают в управление одинаково, но раздел сотрудников

@@ -1,216 +1,120 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 
-import { MOCK_BAR_MENU } from '@/src/data/bar';
-import { MOCK_EVENTS } from '@/src/data/events';
-import { DEFAULT_TABLES } from '@/src/data/tables';
-import type {
-  BarItem,
-  ClubEvent,
-  ClubTable,
-  StockItem,
-  StockMove,
-  StockMoveKind,
-} from '@/src/services/types';
+import {
+  adminService,
+  barService,
+  eventsService,
+  inventoryService,
+  type BarItem,
+  type ClubEvent,
+  type StockItem,
+  type StockMove,
+  type TableLayout,
+} from '@/src/services';
 
-const CATALOG_KEY = 'apprave.catalog';
+export type { TableLayout };
 
-/** Хранимая часть стола: занятость на дату вычисляется, а не лежит в базе. */
-export type TableLayout = Omit<ClubTable, 'taken'>;
-
-interface CatalogSnapshot {
+/**
+ * Каталог на экране: афиша, меню, столы и склад.
+ *
+ * Как и заказы, это кэш, а не хранилище. Данные приходят из сервисов —
+ * из базы или из файла на телефоне, экраны об этом не знают. Правки
+ * тоже идут через сервис, а потом список перечитывается: местная копия,
+ * поправленная «заодно», рано или поздно разошлась бы с настоящей.
+ */
+interface CatalogState {
   events: ClubEvent[];
   barMenu: BarItem[];
   tables: TableLayout[];
   stock: StockItem[];
   moves: StockMove[];
-}
-
-interface CatalogState extends CatalogSnapshot {
   loaded: boolean;
+  /** Читалась ли служебная часть: от этого зависит, что обновлять дальше */
+  staffLoaded: boolean;
 
-  load: () => Promise<void>;
-  reset: () => Promise<void>;
+  /**
+   * Прочитать каталог заново.
+   *
+   * Склад и схема зала — часть служебная: гостю она не нужна, и сервер
+   * её не отдаст. Поэтому читается только тогда, когда есть кому смотреть.
+   */
+  load: (staff?: boolean) => Promise<void>;
 
-  saveEvent: (event: ClubEvent) => Promise<void>;
+  saveEvent: (event: ClubEvent, isNew: boolean) => Promise<void>;
   deleteEvent: (id: string) => Promise<void>;
-  consumeTickets: (eventId: string, ticketTypeId: string, qty: number) => Promise<void>;
 
-  saveBarItem: (item: BarItem, stock?: Partial<StockItem>) => Promise<void>;
+  saveBarItem: (item: BarItem, isNew: boolean, stock?: Partial<StockItem>) => Promise<void>;
   deleteBarItem: (id: string) => Promise<void>;
 
-  saveTable: (table: TableLayout) => Promise<void>;
+  saveTable: (table: TableLayout, isNew: boolean) => Promise<void>;
 
   applyStockMove: (input: {
     barItemId: string;
-    kind: StockMoveKind;
+    kind: 'receipt' | 'writeoff' | 'correction';
     delta: number;
     comment?: string;
-    orderId?: string;
   }) => Promise<void>;
+
+  reset: () => Promise<void>;
 }
 
-/**
- * Каталог клуба: афиша, меню, столы и склад.
- *
- * До появления админки это были константы в бандле. Теперь данные
- * изменяемые и переживают перезапуск, но экраны об этом не знают —
- * они по-прежнему ходят только через src/services.
- */
 export const useCatalogStore = create<CatalogState>((set, get) => ({
-  ...seed(),
+  events: [],
+  barMenu: [],
+  tables: [],
+  stock: [],
+  moves: [],
   loaded: false,
+  staffLoaded: false,
 
-  async load() {
-    try {
-      const raw = await AsyncStorage.getItem(CATALOG_KEY);
-      if (raw) {
-        const saved = JSON.parse(raw) as Partial<CatalogSnapshot>;
-        // Сливаем с посевом: если в сохранённом снимке не окажется поля
-        // из новой версии приложения, каталог не развалится.
-        set({ ...seed(), ...saved, loaded: true });
-        return;
-      }
-    } catch {
-      // Повреждённый каталог лечится посевом — это не повод падать.
-    }
-    set({ ...seed(), loaded: true });
+  async load(staff = get().staffLoaded) {
+    // Сбой одной части не должен оставить остальные незагруженными:
+    // без склада админка работает, без афиши приложение пустое.
+    const [events, barMenu, tables, stock, moves] = await Promise.all([
+      eventsService.list().catch(() => get().events),
+      barService.menu().catch(() => get().barMenu),
+      staff ? adminService.tables().catch(() => get().tables) : get().tables,
+      staff ? inventoryService.stock().catch(() => get().stock) : get().stock,
+      staff ? inventoryService.moves().catch(() => get().moves) : get().moves,
+    ]);
+
+    set({ events, barMenu, tables, stock, moves, loaded: true, staffLoaded: staff });
   },
 
-  async reset() {
-    const fresh = seed();
-    set({ ...fresh, loaded: true });
-    await persist(fresh);
-  },
-
-  async saveEvent(event) {
-    const events = upsertById(get().events, event);
-    set({ events });
-    await persistFrom(get);
+  async saveEvent(event, isNew) {
+    await (isNew ? adminService.createEvent(event) : adminService.updateEvent(event));
+    await get().load();
   },
 
   async deleteEvent(id) {
-    set({ events: get().events.filter((e) => e.id !== id) });
-    await persistFrom(get);
+    await adminService.deleteEvent(id);
+    await get().load();
   },
 
-  async consumeTickets(eventId, ticketTypeId, qty) {
-    const events = get().events.map((event) =>
-      event.id !== eventId
-        ? event
-        : {
-            ...event,
-            tickets: event.tickets.map((t) =>
-              t.id === ticketTypeId ? { ...t, available: Math.max(0, t.available - qty) } : t,
-            ),
-          },
-    );
-
-    set({ events });
-    await persistFrom(get);
-  },
-
-  async saveBarItem(item, stockPatch) {
-    const barMenu = upsertById(get().barMenu, item);
-
-    // У новой позиции склада ещё нет — заводим строку, иначе товар
-    // появится в меню, но будет невидим для инвентаризации.
-    const existing = get().stock.find((s) => s.barItemId === item.id);
-    const stock = existing
-      ? get().stock.map((s) => (s.barItemId === item.id ? { ...s, ...stockPatch } : s))
-      : [
-          ...get().stock,
-          {
-            barItemId: item.id,
-            qty: 0,
-            unit: 'шт',
-            lowThreshold: 5,
-            ...stockPatch,
-          },
-        ];
-
-    set({ barMenu, stock });
-    await persistFrom(get);
+  async saveBarItem(item, isNew, stock) {
+    await (isNew
+      ? adminService.createBarItem(item, stock)
+      : adminService.updateBarItem(item, stock));
+    await get().load();
   },
 
   async deleteBarItem(id) {
-    set({
-      barMenu: get().barMenu.filter((i) => i.id !== id),
-      stock: get().stock.filter((s) => s.barItemId !== id),
-      moves: get().moves.filter((m) => m.barItemId !== id),
-    });
-    await persistFrom(get);
+    await adminService.deleteBarItem(id);
+    await get().load();
   },
 
-  async saveTable(table) {
-    set({ tables: upsertById(get().tables, table) });
-    await persistFrom(get);
+  async saveTable(table, isNew) {
+    await (isNew ? adminService.createTable(table) : adminService.updateTable(table));
+    await get().load();
   },
 
-  async applyStockMove({ barItemId, kind, delta, comment, orderId }) {
-    const move: StockMove = {
-      id: `mv_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-      barItemId,
-      kind,
-      delta,
-      comment,
-      orderId,
-      createdAt: new Date().toISOString(),
-    };
+  async applyStockMove(input) {
+    await inventoryService.apply(input);
+    await get().load();
+  },
 
-    const stock = get().stock.map((s) =>
-      // Остаток не уходит в минус: отрицательный склад означал бы,
-      // что списали больше, чем было, и цифре нельзя верить.
-      s.barItemId === barItemId ? { ...s, qty: Math.max(0, s.qty + delta) } : s,
-    );
-
-    set({ stock, moves: [move, ...get().moves] });
-    await persistFrom(get);
+  async reset() {
+    await adminService.resetCatalog();
+    await get().load();
   },
 }));
-
-/** Демонстрационные данные — состояние каталога «из коробки». */
-function seed(): CatalogSnapshot {
-  return {
-    events: MOCK_EVENTS.map((e) => ({ ...e, tickets: e.tickets.map((t) => ({ ...t })) })),
-    barMenu: MOCK_BAR_MENU.map((i) => ({ ...i })),
-    tables: DEFAULT_TABLES.map((t) => ({ ...t, blocked: false })),
-    stock: MOCK_BAR_MENU.map((item) => ({
-      barItemId: item.id,
-      qty: seedQty(item),
-      unit: seedUnit(item),
-      lowThreshold: item.category === 'champagne' || item.category === 'strong' ? 3 : 12,
-    })),
-    moves: [],
-  };
-}
-
-/** Бутылок держат единицы, порционного — десятки. */
-function seedQty(item: BarItem): number {
-  if (item.category === 'champagne') return item.id === 'b_dp' ? 2 : 8;
-  if (item.category === 'strong') return 12;
-  if (item.category === 'soft') return 90;
-  return 40;
-}
-
-function seedUnit(item: BarItem): string {
-  return item.category === 'champagne' || item.category === 'strong' ? 'бут' : 'шт';
-}
-
-function upsertById<T extends { id: string }>(list: T[], next: T): T[] {
-  const exists = list.some((i) => i.id === next.id);
-  return exists ? list.map((i) => (i.id === next.id ? next : i)) : [...list, next];
-}
-
-async function persistFrom(get: () => CatalogState) {
-  const { events, barMenu, tables, stock, moves } = get();
-  await persist({ events, barMenu, tables, stock, moves });
-}
-
-async function persist(snapshot: CatalogSnapshot) {
-  try {
-    await AsyncStorage.setItem(CATALOG_KEY, JSON.stringify(snapshot));
-  } catch {
-    // Не сохранилось — правки живут до перезапуска.
-  }
-}

@@ -1,4 +1,4 @@
-import { useCatalogStore } from '@/src/store/catalog';
+import { mockCatalog } from './catalog.mock';
 import type { ClubEvent, EventsService } from './types';
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -11,11 +11,11 @@ function byDateAsc(a: ClubEvent, b: ClubEvent) {
 export const mockEventsService: EventsService = {
   async list() {
     await delay(400);
-    return [...useCatalogStore.getState().events].sort(byDateAsc);
+    return [...(await mockCatalog.events())].sort(byDateAsc);
   },
 
   async byId(id) {
     await delay(200);
-    return useCatalogStore.getState().events.find((e) => e.id === id) ?? null;
+    return (await mockCatalog.events()).find((e) => e.id === id) ?? null;
   },
 };

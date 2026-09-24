@@ -15,8 +15,9 @@
     "smoke": "node scripts/api-smoke.mjs",
     "smoke:roles": "node scripts/roles-smoke.mjs",
     "smoke:identity": "node scripts/identity-smoke.mjs",
-    "smoke:all": "npm run smoke && npm run smoke:roles && npm run smoke:identity && npm run smoke:orders",
-    "smoke:orders": "node scripts/orders-smoke.mjs"
+    "smoke:all": "npm run smoke && npm run smoke:roles && npm run smoke:identity && npm run smoke:orders && npm run smoke:catalog",
+    "smoke:orders": "node scripts/orders-smoke.mjs",
+    "smoke:catalog": "node scripts/catalog-smoke.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
