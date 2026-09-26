@@ -1,7 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Notifications from 'expo-notifications';
+import type * as NotificationsModule from 'expo-notifications';
 
 import type { Order } from '@/src/services';
+
+type Notifications = typeof NotificationsModule;
 
 /** За сколько часов до начала приходит напоминание. */
 export const REMIND_HOURS_BEFORE = 3;
@@ -15,29 +17,60 @@ export const REMIND_HOURS_BEFORE = 3;
  * ваша вечеринка» их достаточно — телефон и так знает время события.
  */
 
-let handlerReady = false;
+let loading: Promise<Notifications> | null = null;
 
-/** Вызывается один раз при старте: без обработчика уведомление не покажется поверх приложения. */
-export function initNotifications() {
-  if (handlerReady) return;
-  handlerReady = true;
+/**
+ * Загружает модуль уведомлений и настраивает его.
+ *
+ * Импорт отложенный, и это не оптимизация. Сам факт загрузки
+ * expo-notifications в Expo Go печатает в консоль ошибку про удалённые
+ * пуши: их там нет с SDK 53, а модуль при загрузке безусловно
+ * подписывается на push-токен. Статический импорт делал это при каждом
+ * запуске приложения, включая запуски, где до напоминаний дело не
+ * дошло, — и красная ошибка встречала на экране входа.
+ */
+function notifications(): Promise<Notifications> {
+  if (!loading) {
+    loading = import('expo-notifications').then((mod) => {
+      // Без обработчика уведомление не покажется поверх приложения
+      mod.setNotificationHandler({
+        handleNotification: async () => ({
+          shouldShowBanner: true,
+          shouldShowList: true,
+          shouldPlaySound: false,
+          shouldSetBadge: false,
+        }),
+      });
 
-  Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowBanner: true,
-      shouldShowList: true,
-      shouldPlaySound: false,
-      shouldSetBadge: false,
-    }),
-  });
+      return mod;
+    });
+  }
+
+  return loading;
+}
+
+/**
+ * Подготовка при старте.
+ *
+ * Модуль поднимается, только если напоминания уже есть: иначе
+ * сработавшее уведомление не покажется поверх открытого приложения.
+ * Когда напоминаний нет, трогать его незачем.
+ */
+export async function initNotifications(): Promise<void> {
+  const links = await readLinks();
+  if (Object.keys(links).length === 0) return;
+
+  await notifications();
 }
 
 export async function ensurePermission(): Promise<boolean> {
-  const current = await Notifications.getPermissionsAsync();
+  const api = await notifications();
+
+  const current = await api.getPermissionsAsync();
   if (current.granted) return true;
   if (!current.canAskAgain) return false;
 
-  const asked = await Notifications.requestPermissionsAsync();
+  const asked = await api.requestPermissionsAsync();
   return asked.granted;
 }
 
@@ -61,14 +94,16 @@ export async function scheduleReminder(order: Order): Promise<string | null> {
   if (!(await ensurePermission())) return null;
 
   try {
-    return await Notifications.scheduleNotificationAsync({
+    const api = await notifications();
+
+    return await api.scheduleNotificationAsync({
       content: {
         title: order.eventTitle ?? 'Сегодня в клубе',
         body: `Начало через ${REMIND_HOURS_BEFORE} часа. Билет — в приложении.`,
         data: { orderId: order.id },
       },
       trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        type: api.SchedulableTriggerInputTypes.DATE,
         date: fireAt,
       },
     });
@@ -82,7 +117,8 @@ export async function scheduleReminder(order: Order): Promise<string | null> {
 export async function cancelReminder(id: string | undefined) {
   if (!id) return;
   try {
-    await Notifications.cancelScheduledNotificationAsync(id);
+    const api = await notifications();
+    await api.cancelScheduledNotificationAsync(id);
   } catch {
     // Уже сработало или снято — ничего страшного.
   }

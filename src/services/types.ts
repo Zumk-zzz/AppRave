@@ -470,8 +470,23 @@ export interface StaffService {
 }
 
 export interface AuthService {
-  /** Отправить код на телефон или почту. Возвращает, куда именно отправлен. */
-  requestCode(contact: string): Promise<{ sentTo: string; channel: 'phone' | 'email' }>;
+  /**
+   * Отправить код на телефон или почту.
+   *
+   * Длину кода задаёт сервер: в закрытом режиме это четыре знакомые
+   * цифры, в открытом наружу — случайные шесть. Экран не может знать
+   * её заранее, иначе поле не совпадёт с кодом и вход встанет.
+   *
+   * `devCode` приходит, только пока нет провайдера SMS и сервер
+   * доступен из своей сети: показать код на экране — единственный
+   * способ его узнать. Наружу сервер его не отдаёт.
+   */
+  requestCode(contact: string): Promise<{
+    sentTo: string;
+    channel: 'phone' | 'email';
+    codeLength: number;
+    devCode?: string;
+  }>;
   /** Проверить код и получить пользователя. Бросает при неверном коде. */
   verifyCode(contact: string, code: string): Promise<User>;
   /** Привязать второй канал к текущему аккаунту. */

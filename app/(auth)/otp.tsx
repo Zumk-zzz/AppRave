@@ -6,17 +6,37 @@ import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { Button, Screen, Text } from '@/src/components';
 import { formatContact, parseContact } from '@/src/lib/contact';
-import { authService, DEMO_CODE, InvalidCodeError } from '@/src/services';
+import { authService, InvalidCodeError } from '@/src/services';
 import { useAuthStore } from '@/src/store/auth';
 import { colors, fonts, radius, spacing } from '@/src/theme';
 
-const CODE_LENGTH = 4;
 const RESEND_SECONDS = 30;
+
+/** Длина кода на случай, если экран открыт без неё: обычный режим. */
+const FALLBACK_LENGTH = 4;
+
+/**
+ * Длина из параметра маршрута.
+ *
+ * Параметры приходят строками и могут потеряться при переоткрытии
+ * экрана, поэтому значение проверяется, а не приводится вслепую.
+ */
+function readLength(raw: string | undefined): number {
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 4 || parsed > 8) return FALLBACK_LENGTH;
+  return parsed;
+}
 
 export default function OtpScreen() {
   const router = useRouter();
-  const { contact } = useLocalSearchParams<{ contact: string }>();
+  const params = useLocalSearchParams<{ contact: string; codeLength?: string; devCode?: string }>();
+  const contact = params.contact;
   const signIn = useAuthStore((s) => s.signIn);
+
+  // Длину и подсказку приносит сервер вместе с отправкой кода: снаружи
+  // код шестизначный, и четыре ячейки заполнить было просто нечем
+  const [codeLength, setCodeLength] = useState(() => readLength(params.codeLength));
+  const [devCode, setDevCode] = useState(params.devCode || null);
 
   const inputRef = useRef<TextInput>(null);
   const [code, setCode] = useState('');
@@ -53,11 +73,11 @@ export default function OtpScreen() {
   };
 
   const handleChange = (next: string) => {
-    const digitsOnly = next.replace(/\D/g, '').slice(0, CODE_LENGTH);
+    const digitsOnly = next.replace(/\D/g, '').slice(0, codeLength);
     setCode(digitsOnly);
     setError(null);
 
-    if (digitsOnly.length === CODE_LENGTH) {
+    if (digitsOnly.length === codeLength) {
       void submit(digitsOnly);
     }
   };
@@ -67,11 +87,19 @@ export default function OtpScreen() {
     setSecondsLeft(RESEND_SECONDS);
     setError(null);
     try {
-      await authService.requestCode(contact ?? '');
+      const sent = await authService.requestCode(contact ?? '');
+      // Режим сервера мог смениться между отправками — длину перечитываем
+      setCodeLength(sent.codeLength);
+      setDevCode(sent.devCode ?? null);
+      setCode('');
     } catch {
       setError('Не удалось отправить код повторно');
     }
   };
+
+  // Шесть ячеек в ту же ширину не помещаются в прежнем размере:
+  // на узком экране цифры налезают на границы
+  const compact = codeLength > 4;
 
   const prettyContact = contact ? formatContact(contact) : '';
   // Заголовок зависит от канала: «код из SMS» на письме выглядит ошибкой
@@ -96,9 +124,12 @@ export default function OtpScreen() {
         </Text>
 
         {/* Настоящий ввод спрятан под ячейками: так работает системная
-            клавиатура и автоподстановка кода, а выглядит это как 4 поля. */}
-        <Pressable onPress={() => inputRef.current?.focus()} style={styles.cells}>
-          {Array.from({ length: CODE_LENGTH }).map((_, i) => {
+            клавиатура и автоподстановка кода, а выглядит это как поля. */}
+        <Pressable
+          onPress={() => inputRef.current?.focus()}
+          style={[styles.cells, compact && styles.cellsCompact]}
+        >
+          {Array.from({ length: codeLength }).map((_, i) => {
             const filled = i < code.length;
             const active = i === code.length;
             return (
@@ -106,12 +137,15 @@ export default function OtpScreen() {
                 key={i}
                 style={[
                   styles.cell,
+                  compact && styles.cellCompact,
                   active && styles.cellActive,
                   filled && styles.cellFilled,
                   !!error && styles.cellError,
                 ]}
               >
-                <Text style={styles.cellText}>{code[i] ?? ''}</Text>
+                <Text style={[styles.cellText, compact && styles.cellTextCompact]}>
+                  {code[i] ?? ''}
+                </Text>
               </View>
             );
           })}
@@ -125,7 +159,7 @@ export default function OtpScreen() {
           textContentType="oneTimeCode"
           autoComplete="sms-otp"
           autoFocus
-          maxLength={CODE_LENGTH}
+          maxLength={codeLength}
           editable={!checking}
           style={styles.hiddenInput}
         />
@@ -134,9 +168,13 @@ export default function OtpScreen() {
           <Text variant="caption" tone="danger">
             {error}
           </Text>
+        ) : devCode ? (
+          <Text variant="caption" tone="faint">
+            Демо-режим: код {devCode}
+          </Text>
         ) : (
           <Text variant="caption" tone="faint">
-            Демо-режим: код {DEMO_CODE}
+            Код виден в окне сервера: отправка SMS ещё не подключена
           </Text>
         )}
       </View>
@@ -178,6 +216,9 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     marginBottom: spacing.lg,
   },
+  cellsCompact: {
+    gap: spacing.sm,
+  },
   cell: {
     flex: 1,
     height: 76,
@@ -187,6 +228,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  cellCompact: {
+    height: 62,
   },
   cellActive: {
     borderColor: colors.accent,
@@ -205,6 +249,10 @@ const styles = StyleSheet.create({
     lineHeight: 40,
     textAlign: 'center',
     color: colors.text,
+  },
+  cellTextCompact: {
+    fontSize: 24,
+    lineHeight: 32,
   },
   hiddenInput: {
     position: 'absolute',

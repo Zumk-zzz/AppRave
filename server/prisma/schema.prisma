@@ -415,6 +415,9 @@ model LoginCode {
   /// Нормализованный контакт: +7XXXXXXXXXX или почта в нижнем регистре
   destination String
   code        String
+  /// Неудачные попытки ввода. Код сгорает, не дожидаясь срока годности:
+  /// шестизначный перебирается за вечер, если пробовать без счёта
+  attempts    Int          @default(0)
   expiresAt   DateTime     @map("expires_at")
   usedAt      DateTime?    @map("used_at")
   createdAt   DateTime     @default(now()) @map("created_at")

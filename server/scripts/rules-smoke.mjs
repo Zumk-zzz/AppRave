@@ -265,6 +265,49 @@ check(
   JSON.stringify(closedOrder.lines[0]),
 );
 
+console.log('\n=== Код входа не перебрать ===');
+
+// Сервер открыт наружу через туннель, и код там шестизначный. Длина
+// защищает, только пока попытки считают: иначе его перебирают запросами.
+const victim = `+7900222${String(Date.now()).slice(-4)}`;
+await api('/auth/request-code', { method: 'POST', body: { contact: victim } });
+
+const wrong = [];
+for (let i = 0; i < 5; i++) {
+  const res = await api('/auth/verify', {
+    method: 'POST',
+    body: { contact: victim, code: '999999' },
+  });
+  wrong.push(res.status);
+}
+
+check('неверный код не пускает', wrong.every((s) => s === 400), wrong.join(', '));
+
+const afterBurn = await api('/auth/verify', {
+  method: 'POST',
+  body: { contact: victim, code: '0000' },
+});
+check(
+  'после пяти промахов сгорает и верный код',
+  afterBurn.status === 400,
+  `статус ${afterBurn.status}`,
+);
+
+const fresh = await api('/auth/request-code', { method: 'POST', body: { contact: victim } });
+check('новый код запросить можно', fresh.status === 200, `статус ${fresh.status}`);
+
+const afterFresh = await api('/auth/verify', {
+  method: 'POST',
+  body: { contact: victim, code: '0000' },
+});
+check('по новому коду вход проходит', afterFresh.status === 200, `статус ${afterFresh.status}`);
+
+check(
+  'длина кода приходит вместе с отправкой',
+  fresh.body.codeLength === 4,
+  `codeLength ${fresh.body.codeLength}`,
+);
+
 console.log('\n=== Уборка ===');
 await hide(finished, finishedAt);
 await hide(running, new Date(Date.now() - HOUR));

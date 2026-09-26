@@ -45,7 +45,7 @@ export const mockAuthService: AuthService = {
     const parsed = parseContact(contact);
     if (!parsed) throw new Error('Некорректный контакт');
 
-    return { sentTo: parsed.value, channel: parsed.channel };
+    return { sentTo: parsed.value, channel: parsed.channel, codeLength: DEMO_CODE.length, devCode: DEMO_CODE };
   },
 
   async verifyCode(contact, code) {

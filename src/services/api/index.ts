@@ -22,11 +22,16 @@ import {
 
 export const apiAuthService: AuthService = {
   async requestCode(contact) {
-    const res = await request<{ sentTo: string; channel: 'phone' | 'email' }>(
-      '/auth/request-code',
-      { method: 'POST', body: { contact }, anonymous: true },
-    );
-    return res;
+    const res = await request<{
+      sentTo: string;
+      channel: 'phone' | 'email';
+      codeLength?: number;
+      devCode?: string;
+    }>('/auth/request-code', { method: 'POST', body: { contact }, anonymous: true });
+
+    // codeLength появился позже самого маршрута: сервер постарее
+    // о нём не знает, и там по-прежнему четыре цифры
+    return { ...res, codeLength: res.codeLength ?? 4 };
   },
 
   async verifyCode(contact, code) {

@@ -5,7 +5,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { Badge, Button, Card, Field, SectionHeader, Sheet, Text } from '@/src/components';
 import { formatContact, parseContact, type Channel } from '@/src/lib/contact';
-import { authService, DEMO_CODE, InvalidCodeError } from '@/src/services';
+import { authService, InvalidCodeError } from '@/src/services';
 import { useAuthStore } from '@/src/store/auth';
 import { colors, spacing } from '@/src/theme';
 
@@ -25,6 +25,9 @@ export function ContactsCard() {
   const [value, setValue] = useState('');
   const [code, setCode] = useState('');
   const [sent, setSent] = useState(false);
+  // Код показывается подсказкой, только если сервер его вернул: снаружи
+  // он остаётся в окне сервера, и обещать '0000' там нельзя
+  const [devCode, setDevCode] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -38,6 +41,7 @@ export function ContactsCard() {
     setValue('');
     setCode('');
     setSent(false);
+    setDevCode(null);
     setError(null);
   };
 
@@ -48,7 +52,8 @@ export function ContactsCard() {
     setError(null);
 
     try {
-      await authService.requestCode(parsed.value);
+      const res = await authService.requestCode(parsed.value);
+      setDevCode(res.devCode ?? null);
       setSent(true);
     } catch {
       setError('Не удалось отправить код');
@@ -128,10 +133,14 @@ export function ContactsCard() {
               label="Код подтверждения"
               value={code}
               onChangeText={setCode}
-              placeholder={DEMO_CODE}
+              placeholder={devCode ?? '••••'}
               keyboardType="number-pad"
               maxLength={6}
-              hint={`Отправили на ${parsed ? formatContact(parsed.value) : ''}`}
+              hint={
+                devCode
+                  ? `Отправили на ${parsed ? formatContact(parsed.value) : ''}`
+                  : 'Код виден в окне сервера: отправка SMS ещё не подключена'
+              }
             />
           )}
 

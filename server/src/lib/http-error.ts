@@ -16,3 +16,4 @@ export const forbidden = (m = 'Недостаточно прав') => new HttpEr
 export const notFound = (m = 'Не найдено') => new HttpError(404, m, 'not_found');
 /** 409 — состояние изменилось: билет разобрали, стол заняли. */
 export const conflict = (m: string, code?: string) => new HttpError(409, m, code);
+export const tooManyRequests = (m: string, code?: string) => new HttpError(429, m, code);

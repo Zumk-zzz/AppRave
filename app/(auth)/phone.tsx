@@ -48,8 +48,11 @@ export default function ContactScreen() {
     setError(null);
 
     try {
-      await authService.requestCode(contact);
-      router.push({ pathname: '/(auth)/otp', params: { contact } });
+      const sent = await authService.requestCode(contact);
+      router.push({
+        pathname: '/(auth)/otp',
+        params: { contact, codeLength: String(sent.codeLength), devCode: sent.devCode ?? '' },
+      });
     } catch {
       setError('Не удалось отправить код. Попробуйте ещё раз.');
     } finally {

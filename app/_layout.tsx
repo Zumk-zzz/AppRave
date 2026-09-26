@@ -22,7 +22,9 @@ import { colors } from '@/src/theme';
 SplashScreen.preventAutoHideAsync();
 
 // Без обработчика уведомление не покажется, пока приложение открыто.
-initNotifications();
+// Модуль уведомлений поднимается сам и только при наличии напоминаний,
+// поэтому ответа здесь не ждём: старт от него не зависит.
+void initNotifications();
 
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({

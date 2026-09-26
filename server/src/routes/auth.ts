@@ -6,10 +6,57 @@ import { signToken } from '../auth/jwt.js';
 import { db } from '../db.js';
 import { env, showCodeInResponse } from '../env.js';
 import { parseContact, type Channel } from '../lib/contact.js';
-import { badRequest, conflict, notFound } from '../lib/http-error.js';
+import { badRequest, conflict, notFound, tooManyRequests } from '../lib/http-error.js';
 import { allocateMemberNo } from '../lib/ids.js';
 
 const CODE_TTL_MINUTES = 5;
+
+/**
+ * Сколько раз можно ошибиться, прежде чем код сгорит.
+ *
+ * Пока сервер стоял в своей сети, считать попытки было незачем: код
+ * знал только тот, кто сидел за компьютером. Снаружи всё наоборот —
+ * шестизначный код перебирается запросами за несколько часов, и длина
+ * сама по себе не защищает, защищает именно предел попыток.
+ */
+const MAX_ATTEMPTS = 5;
+
+/** Сколько кодов можно запросить на один контакт за окно. */
+const MAX_CODES_PER_WINDOW = 5;
+const WINDOW_MINUTES = 15;
+
+/**
+ * Проверяет код и гасит его.
+ *
+ * Рассматривается только последний выданный код: иначе предел попыток
+ * обходится тем, что старые коды остаются живыми и каждый даёт свои
+ * пять попыток.
+ */
+async function takeCode(destination: string, code: string): Promise<boolean> {
+  const active = await db.loginCode.findFirst({
+    where: { destination, usedAt: null, expiresAt: { gt: new Date() } },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  if (!active) return false;
+
+  if (active.code !== code) {
+    const attempts = active.attempts + 1;
+
+    await db.loginCode.update({
+      where: { id: active.id },
+      // Исчерпав попытки, код гасим тем же способом, что и после входа:
+      // отдельного признака «заблокирован» не нужно, запрашивают новый
+      data: { attempts, usedAt: attempts >= MAX_ATTEMPTS ? new Date() : null },
+    });
+
+    return false;
+  }
+
+  // Один код — один вход
+  await db.loginCode.update({ where: { id: active.id }, data: { usedAt: new Date() } });
+  return true;
+}
 
 export async function authRoutes(app: FastifyInstance) {
   /**
@@ -21,6 +68,32 @@ export async function authRoutes(app: FastifyInstance) {
   app.post('/auth/request-code', async (req) => {
     const { contact } = z.object({ contact: z.string() }).parse(req.body);
     const { channel, value } = parseContact(contact);
+
+    // Без ограничения предел попыток ничего не стоит: исчерпав пять,
+    // запрашивают новый код и продолжают перебор с чистого счёта.
+    //
+    // Только для открытого сервера. В своей сети перебирать код некому,
+    // зато наборы проверок входят десятками раз подряд, и общий лимит
+    // ронял бы их на ровном месте.
+    //
+    // Считаются невостребованные коды: тот, кто вошёл, свой код погасил,
+    // а копятся они у того, кто запрашивает и не вводит.
+    if (env.PUBLIC_ACCESS) {
+      const pending = await db.loginCode.count({
+        where: {
+          destination: value,
+          usedAt: null,
+          createdAt: { gt: new Date(Date.now() - WINDOW_MINUTES * 60_000) },
+        },
+      });
+
+      if (pending >= MAX_CODES_PER_WINDOW) {
+        throw tooManyRequests(
+          `Слишком много запросов кода. Попробуйте через ${WINDOW_MINUTES} минут`,
+          'too_many_codes',
+        );
+      }
+    }
 
     const expiresAt = new Date(Date.now() + CODE_TTL_MINUTES * 60_000);
     await db.loginCode.create({
@@ -39,6 +112,10 @@ export async function authRoutes(app: FastifyInstance) {
       channel,
       sentTo: value,
       devCode: showCodeInResponse ? env.DEMO_SMS_CODE : undefined,
+      // Длину экран узнаёт от сервера, а не держит у себя: в открытом
+      // режиме код шестизначный, и поле на четыре ячейки просто нельзя
+      // заполнить — вход упирается в разъехавшуюся настройку
+      codeLength: env.DEMO_SMS_CODE.length,
       expiresInSeconds: CODE_TTL_MINUTES * 60,
     };
   });
@@ -57,15 +134,9 @@ export async function authRoutes(app: FastifyInstance) {
 
     const { channel, value } = parseContact(contact);
 
-    const record = await db.loginCode.findFirst({
-      where: { destination: value, code, usedAt: null, expiresAt: { gt: new Date() } },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    if (!record) throw badRequest('Неверный или просроченный код', 'invalid_code');
-
-    // Гасим код сразу: один код — один вход
-    await db.loginCode.update({ where: { id: record.id }, data: { usedAt: new Date() } });
+    if (!(await takeCode(value, code))) {
+      throw badRequest('Неверный или просроченный код', 'invalid_code');
+    }
 
     const existing = await findByContact(channel, value);
 
@@ -116,19 +187,14 @@ export async function authRoutes(app: FastifyInstance) {
 
     const { channel, value } = parseContact(contact);
 
-    const record = await db.loginCode.findFirst({
-      where: { destination: value, code, usedAt: null, expiresAt: { gt: new Date() } },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    if (!record) throw badRequest('Неверный или просроченный код', 'invalid_code');
+    if (!(await takeCode(value, code))) {
+      throw badRequest('Неверный или просроченный код', 'invalid_code');
+    }
 
     const owner = await findByContact(channel, value);
     if (owner && owner.id !== auth.sub) {
       throw conflict('Этот контакт уже привязан к другому аккаунту', 'contact_taken');
     }
-
-    await db.loginCode.update({ where: { id: record.id }, data: { usedAt: new Date() } });
 
     const user = await db.user.update({
       where: { id: auth.sub },
