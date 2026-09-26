@@ -2,6 +2,11 @@ import Constants from 'expo-constants';
 import * as SecureStore from 'expo-secure-store';
 
 import { clearCache } from './cache';
+import { ApiError, NetworkError } from './errors';
+
+// Прежнее место этих классов — здесь: кто импортировал их из client,
+// пусть и дальше импортирует, переучивать вызывающих незачем
+export { ApiError, NetworkError };
 
 const TOKEN_KEY = 'apprave.token';
 
@@ -77,25 +82,6 @@ export async function setToken(next: string | null) {
   if (!next) await clearCache();
 }
 
-/** Ошибка от API с кодом, по которому экран может отличить причину. */
-export class ApiError extends Error {
-  constructor(
-    public readonly status: number,
-    message: string,
-    public readonly code?: string,
-  ) {
-    super(message);
-    this.name = 'ApiError';
-  }
-}
-
-/** Сеть недоступна: сервер не запущен или телефон в другой сети. */
-export class NetworkError extends Error {
-  constructor() {
-    super('Сервер недоступен');
-    this.name = 'NetworkError';
-  }
-}
 
 interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';

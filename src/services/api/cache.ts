@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { NetworkError } from './client';
+import { NetworkError } from './errors';
 
 /**
  * Снимок последнего успешного ответа.
