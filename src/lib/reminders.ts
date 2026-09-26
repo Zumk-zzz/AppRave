@@ -63,6 +63,25 @@ export async function initNotifications(): Promise<void> {
   await notifications();
 }
 
+/** Состояние разрешения на уведомления, как его видит система. */
+export type PermissionState = 'granted' | 'denied' | 'blocked';
+
+/**
+ * Текущее разрешение.
+ *
+ * Экран спрашивает через эту обёртку, а не импортирует модуль сам:
+ * прямой импорт где угодно в приложении сводит отложенную загрузку
+ * на нет — expo-router при старте проходит по всем маршрутам, и
+ * модуль поднимается вместе с первым же экраном, который его назвал.
+ */
+export async function readPermission(): Promise<PermissionState> {
+  const api = await notifications();
+  const current = await api.getPermissionsAsync();
+
+  if (current.granted) return 'granted';
+  return current.canAskAgain ? 'denied' : 'blocked';
+}
+
 export async function ensurePermission(): Promise<boolean> {
   const api = await notifications();
 

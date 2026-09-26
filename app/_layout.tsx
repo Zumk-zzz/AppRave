@@ -7,6 +7,7 @@ import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
+import { LogBox } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import 'react-native-reanimated';
 
@@ -17,6 +18,15 @@ import { useCatalogStore } from '@/src/store/catalog';
 import { useOrdersStore } from '@/src/store/orders';
 import { useStaffStore } from '@/src/store/staff';
 import { colors } from '@/src/theme';
+
+// Expo Go ругается на удалённые пуши, как только загружается
+// expo-notifications, — а мы пользуемся только локальными напоминаниями,
+// и они работают. Гасим ровно это сообщение: иначе оно закрывает экран
+// красным оверлеем и выглядит поломкой, которой нет.
+//
+// Строчка точная, не по началу текста: любое другое сообщение того же
+// модуля должно быть видно.
+LogBox.ignoreLogs([/expo-notifications: Android Push notifications/]);
 
 // Держим сплэш до загрузки шрифтов, иначе на старте мелькает системный шрифт.
 SplashScreen.preventAutoHideAsync();

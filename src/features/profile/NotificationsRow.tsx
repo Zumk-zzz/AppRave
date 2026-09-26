@@ -1,14 +1,18 @@
 import { Ionicons } from '@expo/vector-icons';
-import * as Notifications from 'expo-notifications';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Linking, Pressable, StyleSheet, View } from 'react-native';
 
 import { Text } from '@/src/components';
-import { ensurePermission, REMIND_HOURS_BEFORE } from '@/src/lib/reminders';
+import {
+  ensurePermission,
+  readPermission,
+  REMIND_HOURS_BEFORE,
+  type PermissionState,
+} from '@/src/lib/reminders';
 import { colors, spacing } from '@/src/theme';
 
-type State = 'unknown' | 'granted' | 'denied' | 'blocked';
+type State = 'unknown' | PermissionState;
 
 /**
  * Управление напоминаниями.
@@ -21,8 +25,7 @@ export function NotificationsRow() {
   const [state, setState] = useState<State>('unknown');
 
   const refresh = useCallback(async () => {
-    const current = await Notifications.getPermissionsAsync();
-    setState(current.granted ? 'granted' : current.canAskAgain ? 'denied' : 'blocked');
+    setState(await readPermission());
   }, []);
 
   // Перечитываем при каждом показе экрана: разрешение могли отозвать
