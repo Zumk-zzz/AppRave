@@ -110,10 +110,11 @@ async function pay(order: ApiOrder): Promise<ApiOrder> {
     body: { orderId: order.id },
   });
 
+  // Токен нужен, когда сервер открыт наружу: там подтвердить оплату
+  // может только владелец заказа. В своей сети он просто не мешает.
   await request<{ ok: boolean }>('/webhooks/payment', {
     method: 'POST',
     body: { providerId: payment.providerId, status: 'succeeded' },
-    anonymous: true,
   });
 
   return request<ApiOrder>(`/orders/${order.id}`);

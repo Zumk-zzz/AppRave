@@ -1,9 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
-import { requireUser } from '../auth/guard.js';
+import { readAuth, requireUser } from '../auth/guard.js';
 import { db } from '../db.js';
-import { conflict, notFound } from '../lib/http-error.js';
+import { env } from '../env.js';
+import { conflict, forbidden, notFound } from '../lib/http-error.js';
 import { pointsForPurchase, tierForPoints } from '../lib/money.js';
 import { loadOrder } from './orders.js';
 
@@ -63,14 +64,31 @@ export async function paymentRoutes(app: FastifyInstance) {
    * В заглушке вызывается вручную и играет роль вебхука. У реального
    * шлюза этот обработчик будет принимать его запрос и проверять подпись,
    * а не доверять клиенту.
+   *
+   * Пока подписи нет, единственная защита — адрес сервера. В своей сети
+   * этого достаточно, а наружу — нет: зная номер заказа, подтвердить
+   * чужую оплату смог бы кто угодно. Поэтому при открытом доступе
+   * требуется токен владельца заказа. Настоящий шлюз токеном не
+   * располагает, и когда он появится, здесь будет проверка подписи —
+   * ровно в этом месте.
    */
   app.post('/webhooks/payment', async (req) => {
     const { providerId, status } = z
       .object({ providerId: z.string(), status: z.enum(['succeeded', 'failed']) })
       .parse(req.body);
 
-    const payment = await db.payment.findUnique({ where: { providerId } });
+    const payment = await db.payment.findUnique({
+      where: { providerId },
+      include: { order: { select: { userId: true } } },
+    });
     if (!payment) throw notFound('Платёж не найден');
+
+    if (env.PUBLIC_ACCESS) {
+      const auth = readAuth(req);
+      if (!auth || auth.sub !== payment.order.userId) {
+        throw forbidden('Подтвердить оплату может только владелец заказа');
+      }
+    }
 
     // Повторная доставка того же события не должна менять состояние дважды
     if (payment.status === 'succeeded') {

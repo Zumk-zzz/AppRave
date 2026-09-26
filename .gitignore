@@ -3,6 +3,9 @@
 # dependencies
 node_modules/
 
+# Скачанные инструменты разработчика: cloudflared и подобное
+.tools/
+
 # Expo
 .expo/
 dist/

@@ -94,7 +94,22 @@ for (const token of [doorman.token, bartender.token]) {
 }
 
 const events = await api('/events');
-const event = events.body.find((e) => e.tickets.some((t) => t.available > 1));
+// Дальше двух суток: набор проверяет отмену позиции, а она закрывается
+// за сутки до начала — на ближайшей субботе проверка падала бы
+// не из-за поломки, а из-за календаря
+const DAY = 86_400_000;
+const event = events.body.find(
+  (e) =>
+    e.tickets.some((t) => t.available > 1) &&
+    new Date(e.date).getTime() - Date.now() > 2 * DAY,
+);
+
+if (!event) {
+  console.error(
+    '\nНет вечеринки дальше двух суток — сдвиньте афишу: npm run demo:refresh\n',
+  );
+  process.exit(1);
+}
 check('есть событие с билетами', !!event, event?.title);
 
 const menu = await api('/bar/menu');

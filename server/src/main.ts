@@ -4,7 +4,7 @@ import { ZodError } from 'zod';
 
 import { resolveAuth } from './auth/guard.js';
 import { db } from './db.js';
-import { env, isProd } from './env.js';
+import { env, isProd, weakCodeIgnored } from './env.js';
 import { startExpirationJob } from './jobs/expire-reservations.js';
 import { HttpError } from './lib/http-error.js';
 import { adminRoutes } from './routes/admin.js';
@@ -87,6 +87,21 @@ await app.register(orderRoutes);
 await app.register(paymentRoutes);
 await app.register(refundRoutes);
 await app.register(staffRoutes);
+
+if (env.PUBLIC_ACCESS) {
+  // Старые коды, выданные до открытия наружу, знает кто угодно:
+  // 0000 лежит в .env и мог разойтись. Гасим их одним движением.
+  const { count } = await db.loginCode.deleteMany({ where: { usedAt: null } });
+
+  app.log.warn(
+    {
+      code: env.DEMO_SMS_CODE,
+      weakCodeIgnored,
+      droppedCodes: count,
+    },
+    'сервер открыт наружу: код входа выше, в ответах API его больше нет',
+  );
+}
 
 const stopJob = startExpirationJob(app.log);
 

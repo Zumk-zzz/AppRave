@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { requireUser } from '../auth/guard.js';
 import { signToken } from '../auth/jwt.js';
 import { db } from '../db.js';
-import { env } from '../env.js';
+import { env, showCodeInResponse } from '../env.js';
 import { parseContact, type Channel } from '../lib/contact.js';
 import { badRequest, conflict, notFound } from '../lib/http-error.js';
 import { allocateMemberNo } from '../lib/ids.js';
@@ -27,13 +27,18 @@ export async function authRoutes(app: FastifyInstance) {
       data: { channel, destination: value, code: env.DEMO_SMS_CODE, expiresAt },
     });
 
+    // Пока нет провайдера SMS, код нужно откуда-то узнать. В своей сети
+    // он приходит в ответе — так удобнее всего. Наружу его отдавать
+    // нельзя ни при каких условиях: это сделало бы вход открытым для
+    // всех, поэтому там он остаётся только в консоли сервера.
+    if (!showCodeInResponse) {
+      req.log.info({ destination: value, code: env.DEMO_SMS_CODE }, 'код подтверждения');
+    }
+
     return {
       channel,
       sentTo: value,
-      // Только для заглушки. При подключении провайдера SMS и почты это
-      // поле обязано исчезнуть — иначе код можно получить без доступа
-      // к самому каналу.
-      devCode: env.DEMO_SMS_CODE,
+      devCode: showCodeInResponse ? env.DEMO_SMS_CODE : undefined,
       expiresInSeconds: CODE_TTL_MINUTES * 60,
     };
   });

@@ -74,7 +74,22 @@ console.log('\n=== Каталог ===');
 const events = await api('/events');
 check('афиша отдаётся', events.status === 200 && events.body.length > 0, `${events.body?.length} событий`);
 
-const withStock = events.body.find((e) => e.tickets.some((t) => t.available > 0));
+// Берём вечеринку не раньше чем через двое суток: набор проверяет отмену,
+// а она закрывается за сутки до начала. С ближайшей субботой проверка
+// падала бы не потому, что отмена сломана, а потому, что до неё три часа.
+const DAY = 86_400_000;
+const withStock = events.body.find(
+  (e) =>
+    e.tickets.some((t) => t.available > 0) &&
+    new Date(e.date).getTime() - Date.now() > 2 * DAY,
+);
+
+if (!withStock) {
+  console.error(
+    '\nНет вечеринки дальше двух суток — сдвиньте афишу: npm run demo:refresh\n',
+  );
+  process.exit(1);
+}
 
 // Проверяем границы остатка, а не наличие распроданного типа: предыдущий
 // прогон мог вернуть билеты в продажу отменой, и тогда распроданных типов
