@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
-import { readAuth, requirePermission, requireStaff, requireUser } from '../auth/guard.js';
+import { readAuth, requirePermission, requireStaff, requireUser, type Auth } from '../auth/guard.js';
 import { db } from '../db.js';
 import { badRequest, conflict, forbidden, notFound } from '../lib/http-error.js';
 import { parseContact } from '../lib/contact.js';
@@ -57,10 +57,10 @@ export async function staffRoutes(app: FastifyInstance) {
 
     if (!order) throw notFound('Заказ не найден');
 
-    const ban = await banFor(order.user);
+    const ban = may('scan:entry') ? await banFor(order.user) : null;
 
     return {
-      order: toScanDto(order),
+      order: toScanDto(order, auth),
       // Отказ во входе показывается сразу и крупно: фейсер не должен
       // искать эту информацию отдельно, когда очередь стоит
       ban: ban
@@ -79,17 +79,19 @@ export async function staffRoutes(app: FastifyInstance) {
     const { number } = z.object({ number: z.string() }).parse(req.params);
     const { manual } = z.object({ manual: z.boolean().default(false) }).parse(req.body ?? {});
 
-    const order = await db.order.findUnique({ where: { number }, include: { lines: true, user: true } });
-    if (!order) throw notFound('Заказ не найден');
-    if (order.status === 'cancelled') throw conflict('Заказ отменён', 'order_cancelled');
-    if (order.status !== 'paid' && order.status !== 'used') {
-      throw conflict('Заказ не оплачен', 'not_paid');
-    }
+    const result = await db.$transaction(async (tx) => {
+      // Все исполнения и отмены одного заказа выстраиваются в очередь.
+      await tx.$queryRaw`SELECT id FROM orders WHERE number = ${number} FOR UPDATE`;
+      const order = await tx.order.findUnique({ where: { number }, include: { lines: true, user: true } });
+      if (!order) throw notFound('Заказ не найден');
+      if (order.status === 'cancelled') throw conflict('Заказ отменён', 'order_cancelled');
+      if (order.status !== 'paid' && order.status !== 'used') {
+        throw conflict('Заказ не оплачен', 'not_paid');
+      }
 
-    const ban = await banFor(order.user);
-    if (ban) throw conflict(`Отказ во входе: ${ban.reason}`, 'banned');
+      const ban = await banFor(order.user);
+      if (ban) throw conflict(`Отказ во входе: ${ban.reason}`, 'banned');
 
-    const admitted = await db.$transaction(async (tx) => {
       let count = 0;
 
       for (const line of order.lines) {
@@ -111,17 +113,16 @@ export async function staffRoutes(app: FastifyInstance) {
         await settleStatus(tx, order.id);
       }
 
+      if (count === 0) throw conflict('Нет неиспользованных билетов на вход', 'nothing_to_admit');
+      await tx.staffAction.create({ data: {
+        actorId: auth.sub, shiftId: auth.shiftId, orderId: order.id,
+        kind: manual ? 'entry_manual' : 'entry_admitted',
+        details: { number, guests: count },
+      } });
       return count;
     });
 
-    if (admitted === 0) throw conflict('По этому заказу уже прошли', 'nothing_to_admit');
-
-    await logAction(auth.sub, manual ? 'entry_manual' : 'entry_admitted', {
-      orderId: order.id,
-      details: { number: order.number, guests: admitted },
-    });
-
-    return { admitted, order: await loadScan(order.number) };
+    return { admitted: result, order: await loadScan(number, auth) };
   });
 
   /** Выдать напитки: по одной позиции, возможно частично. */
@@ -132,31 +133,34 @@ export async function staffRoutes(app: FastifyInstance) {
       .object({ lineId: z.string(), qty: z.number().int().min(1).max(50) })
       .parse(req.body);
 
-    const order = await db.order.findUnique({ where: { number }, include: { lines: true } });
-    if (!order) throw notFound('Заказ не найден');
-    if (order.status === 'cancelled') throw conflict('Заказ отменён', 'order_cancelled');
-
-    const line = order.lines.find((l) => l.id === lineId);
-    if (!line || line.kind !== 'bar') throw notFound('Позиция не найдена');
-
-    const left = line.qty - line.redeemed - line.cancelledQty;
-    if (left <= 0) throw conflict('По этой позиции уже всё выдано', 'nothing_to_issue');
-    if (qty > left) throw badRequest(`Осталось выдать только ${left}`, 'too_many');
-
     await db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM orders WHERE number = ${number} FOR UPDATE`;
+      const order = await tx.order.findUnique({ where: { number }, include: { lines: true } });
+      if (!order) throw notFound('Заказ не найден');
+      if (order.status === 'cancelled') throw conflict('Заказ отменён', 'order_cancelled');
+      if (order.status !== 'paid' && order.status !== 'used') {
+        throw conflict('Заказ не оплачен', 'not_paid');
+      }
+
+      const line = order.lines.find((l) => l.id === lineId);
+      if (!line || line.kind !== 'bar') throw notFound('Позиция не найдена');
+
+      const left = line.qty - line.redeemed - line.cancelledQty;
+      if (left <= 0) throw conflict('По этой позиции уже всё выдано', 'nothing_to_issue');
+      if (qty > left) throw badRequest(`Осталось выдать только ${left}`, 'too_many');
+
       await tx.orderLine.update({
         where: { id: line.id },
         data: { redeemed: line.redeemed + qty },
       });
       await settleStatus(tx, order.id);
+      await tx.staffAction.create({ data: {
+        actorId: auth.sub, shiftId: auth.shiftId, orderId: order.id, kind: 'bar_issued',
+        details: { number, item: line.title, lineId, qty },
+      } });
     });
 
-    await logAction(auth.sub, 'bar_issued', {
-      orderId: order.id,
-      details: { number: order.number, item: line.title, qty },
-    });
-
-    return { issued: qty, order: await loadScan(order.number) };
+    return { issued: qty, order: await loadScan(number, auth) };
   });
 
   // --- Смены ---
@@ -259,6 +263,32 @@ export async function staffRoutes(app: FastifyInstance) {
   });
 
   // --- Журнал ---
+
+  /** История исполнения: сотруднику свои действия, управляющему — команды. */
+  app.get('/staff/fulfillments', async (req) => {
+    const auth = requireStaff(req);
+    const { cursor, orderId } = z.object({
+      cursor: z.string().optional(), orderId: z.string().optional(),
+    }).parse(req.query);
+    const all = canNow(auth.staffRole, !!auth.shiftId, 'orders:read');
+    const kinds: Prisma.EnumStaffActionKindFilter['in'] = auth.role === 'bartender'
+      ? ['bar_issued'] : auth.role === 'doorman'
+        ? ['entry_admitted', 'entry_manual'] : ['bar_issued', 'entry_admitted', 'entry_manual'];
+    const rows = await db.staffAction.findMany({
+      where: { kind: { in: kinds }, ...(!all ? { actorId: auth.sub } : {}), ...(orderId ? { orderId } : {}) },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+      take: 51,
+      include: { actor: { select: { id: true, name: true, role: true } } },
+    });
+    return {
+      items: rows.slice(0, 50).map((a) => ({
+        id: a.id, kind: a.kind, actor: a.actor, orderId: a.orderId,
+        shiftId: a.shiftId, details: a.details, createdAt: a.createdAt.toISOString(),
+      })),
+      nextCursor: rows.length > 50 ? rows[49].id : null,
+    };
+  });
 
   /** Журнал действий. Сотрудник видит свои, управляющий — все. */
   app.get('/staff/actions', async (req) => {
@@ -418,14 +448,7 @@ export async function staffRoutes(app: FastifyInstance) {
 
   // --- Списки на сегодня ---
 
-  /**
-   * Заказы на событие целиком: список гостей на входе и очередь бара —
-   * это одни и те же заказы, просто показанные с разных сторон.
-   *
-   * Отдаём полную модель заказа, ту же, что видит гость в своём билете.
-   * Два урезанных ответа под два экрана пришлось бы править парой при
-   * каждом изменении состава заказа, а расходиться они начали бы сразу.
-   */
+  /** Состав и сумма ограничены рабочими правами сотрудника на сервере. */
   app.get('/staff/orders', async (req) => {
     const auth = requireUser(req);
     const may = (permission: Permission) => canNow(auth.staffRole, !!auth.shiftId, permission);
@@ -451,7 +474,7 @@ export async function staffRoutes(app: FastifyInstance) {
     // для выдачи напитка достаточно имени.
     const seesContact = may('scan:entry') || may('orders:read');
 
-    return orders.map((o) => ({
+    return orders.map((o) => staffOrder(o, auth)).filter((o) => o.lines.length > 0).map((o) => ({
       ...toOrderDto(o),
       guest: {
         name: o.user.name,
@@ -465,13 +488,23 @@ type OrderWithAll = Prisma.OrderGetPayload<{
   include: { lines: true; event: true; bookings: true; user: true };
 }>;
 
-function toScanDto(order: OrderWithAll) {
+function staffOrder(order: OrderWithAll, auth: Auth): OrderWithAll {
+  if (canNow(auth.staffRole, !!auth.shiftId, 'orders:read')) return order;
+  const kind = auth.role === 'doorman' ? 'ticket' : 'bar';
+  const lines = order.lines.filter((line) => line.kind === kind);
+  return { ...order, lines, bookings: [], pointsEarned: 0,
+    totalKopecks: lines.reduce((sum, line) => sum + line.priceKopecks * (line.qty - line.cancelledQty), 0),
+  };
+}
+
+function toScanDto(fullOrder: OrderWithAll, auth: Auth) {
+  const order = staffOrder(fullOrder, auth);
   const left = leftOf;
 
   return {
     number: order.number,
     status: order.status,
-    guest: { name: order.user.name, phone: order.user.phone },
+    guest: { name: order.user.name, contact: auth.role === 'bartender' ? null : (order.user.phone ?? order.user.email) },
     event: order.event
       ? { id: order.event.id, title: order.event.title, date: order.event.startsAt.toISOString() }
       : null,
@@ -485,8 +518,7 @@ function toScanDto(order: OrderWithAll) {
     table: order.bookings[0]
       ? { guests: order.bookings[0].guests }
       : null,
-    // Полный состав — чтобы приложение собрало ту же модель заказа,
-    // что и в личном кабинете, и не заводило вторую ради сканера
+    // Та же форма DTO, но только доступные сотруднику позиции.
     id: order.id,
     createdAt: order.createdAt.toISOString(),
     totalKopecks: order.totalKopecks,
@@ -496,12 +528,12 @@ function toScanDto(order: OrderWithAll) {
   };
 }
 
-async function loadScan(number: string) {
+async function loadScan(number: string, auth: Auth) {
   const order = await db.order.findUnique({
     where: { number },
     include: { lines: true, event: true, bookings: true, user: true },
   });
-  return order ? toScanDto(order) : null;
+  return order ? toScanDto(order, auth) : null;
 }
 
 function toBanDto(ban: {

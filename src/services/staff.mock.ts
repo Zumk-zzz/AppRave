@@ -95,7 +95,25 @@ export const mockStaffService: StaffService = {
   },
 
   async actions(limit = 100) {
-    return (await read<StaffAction>(ACTIONS_KEY)).slice(0, limit);
+    const actor = currentActor();
+    const seesAll = actor?.staffRole === 'admin' || actor?.staffRole === 'manager';
+    return (await read<StaffAction>(ACTIONS_KEY))
+      .filter((a) => seesAll || a.actorId === actor?.id).slice(0, limit);
+  },
+
+  async history(cursor, orderId) {
+    const actor = currentActor();
+    if (!actor?.staffRole) throw new Error('История доступна только сотрудникам');
+    const all = actor.staffRole === 'admin' || actor.staffRole === 'manager';
+    const rows = (await read<StaffAction>(ACTIONS_KEY)).filter((a) =>
+      (all || a.actorId === actor.id) && (!orderId || a.orderId === orderId) &&
+      (actor.staffRole === 'bartender' ? a.kind === 'bar_issued' :
+        actor.staffRole === 'doorman' ? ['entry_admitted', 'entry_manual'].includes(a.kind) :
+          ['bar_issued', 'entry_admitted', 'entry_manual'].includes(a.kind)),
+    );
+    const start = cursor ? rows.findIndex((a) => a.id === cursor) + 1 : 0;
+    const items = rows.slice(start, start + 50);
+    return { items, nextCursor: start + 50 < rows.length ? items[49].id : null };
   },
 
   async members() {
@@ -179,6 +197,7 @@ export async function logMock(input: {
     actorName: input.user.name,
     actorRole: input.role ?? input.user.staffRole ?? 'guest',
     orderId: input.orderId,
+    orderNumber: input.orderId,
     summary: input.summary,
     shiftId: input.shiftId ?? (await openShiftOf(input.user.id))?.id,
     createdAt: new Date().toISOString(),

@@ -149,6 +149,7 @@ export default function RootLayout() {
         {/* Смена и журнал — для любого сотрудника, независимо от роли */}
         <Stack.Protected guard={hasPosition}>
           <Stack.Screen name="shift" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="history" options={{ animation: 'slide_from_right' }} />
         </Stack.Protected>
 
         {/* Маршруты админки недоступны гостю на уровне роутера, а не только

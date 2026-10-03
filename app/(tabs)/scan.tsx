@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
@@ -45,6 +46,9 @@ function ScanHeader() {
 }
 
 export default function AdminScan() {
+  const router = useRouter();
+  const canEntry = useCan('scan:entry');
+  const canBar = useCan('scan:bar');
   const [permission, requestPermission] = useCameraPermissions();
 
   const events = useCatalogStore((s) => s.events);
@@ -58,6 +62,7 @@ export default function AdminScan() {
   const [issuing, setIssuing] = useState<Record<string, number>>({});
   const [busy, setBusy] = useState(false);
   const locked = useRef(false);
+  const actionBusy = useRef(false);
 
   /**
    * Вечеринка, которую обслуживают прямо сейчас.
@@ -83,27 +88,29 @@ export default function AdminScan() {
 
   const handleScan = useCallback(
     ({ data }: { data: string }) => {
-      if (locked.current) return;
+      if (locked.current || scan || busy || (!canEntry && !canBar)) return;
       locked.current = true;
 
       void (async () => {
-        const parsed = parseQrPayload(data);
+        try {
+          const parsed = parseQrPayload(data);
 
-        if (!parsed) {
-          show({ verdict: 'foreign', entry: { total: 0, left: 0 }, bar: [] });
-        } else {
-          // Заказ ищется на сервере: чужая покупка на телефоне сотрудника
-          // взяться не может. В автономном режиме поиск идёт по своим.
-          const order = await findOrder(parsed.number).catch(() => null);
-          show(judgeOrder(order, eventId ?? undefined));
+          if (!parsed) {
+            show({ verdict: 'foreign', entry: { total: 0, left: 0 }, bar: [] });
+          } else {
+            const order = await findOrder(parsed.number);
+            show(judgeOrder(order, eventId ?? undefined));
+          }
+        } catch (e) {
+          Alert.alert('Не удалось проверить QR', e instanceof Error ? e.message : 'Проверьте соединение');
+        } finally {
+          setTimeout(() => {
+            locked.current = false;
+          }, RESCAN_DELAY);
         }
-
-        setTimeout(() => {
-          locked.current = false;
-        }, RESCAN_DELAY);
       })();
     },
-    [findOrder, eventId, show],
+    [findOrder, eventId, show, scan, busy, canEntry, canBar],
   );
 
   /** Пересобирает карточку после выдачи, не требуя повторного сканирования. */
@@ -122,30 +129,40 @@ export default function AdminScan() {
    * бесполезно, сотруднику нужно знать — заказ отменён или гость уже прошёл.
    */
   const run = async (action: () => Promise<Order>) => {
-    if (busy) return;
+    if (actionBusy.current) return;
+    actionBusy.current = true;
     setBusy(true);
 
     try {
       refresh(await action());
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e) {
+      // Предыдущие позиции могли успеть выдаться до обрыва связи.
+      // Убираем выбор и перечитываем сервер, чтобы не повторить их вслепую.
+      setIssuing({});
+      if (scan?.order) {
+        const fresh = await findOrder(scan.order.number).catch(() => null);
+        if (fresh) refresh(fresh);
+        else setScan(null);
+      }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert('Не получилось', e instanceof Error ? e.message : 'Попробуйте ещё раз');
     } finally {
+      actionBusy.current = false;
       setBusy(false);
     }
   };
 
   const handleEntry = () => {
     const order = scan?.order;
-    if (!order) return;
+    if (!order || !canEntry) return;
     void run(() => admit(order));
   };
 
   const handleIssueAll = () => {
     const order = scan?.order;
     const positions = scan?.bar ?? [];
-    if (!order) return;
+    if (!order || !canBar) return;
 
     void run(async () => {
       let fresh = order;
@@ -160,6 +177,10 @@ export default function AdminScan() {
       return fresh;
     });
   };
+
+  if (!canEntry && !canBar) {
+    return <Screen><Text variant="body">Откройте смену в профиле, чтобы работать со сканером.</Text></Screen>;
+  }
 
   if (!permission) {
     return (
@@ -232,13 +253,17 @@ export default function AdminScan() {
                 color={isPositive(scan.verdict) ? colors.success : colors.danger}
               />
               <Text variant="subtitle" style={styles.flex}>
-                {VERDICT_TITLE[scan.verdict]}
+                {scan.verdict === 'nothing-left'
+                  ? (scan.entry.total === 0 && scan.bar.length === 0 ? 'Нет позиций для вашей роли' : canEntry && !canBar ? 'Вход уже подтверждён' : 'Всё уже выдано')
+                  : VERDICT_TITLE[scan.verdict]}
               </Text>
               {scan.order && <Badge label={scan.order.number} tone="neutral" />}
             </View>
 
             <Text variant="caption" tone="muted">
-              {VERDICT_HINT[scan.verdict]}
+              {scan.verdict === 'nothing-left' ? 'Нет доступных позиций для подтверждения'
+                : scan.verdict === 'ok' && canEntry && !canBar ? 'Подтвердите проход гостей'
+                  : VERDICT_HINT[scan.verdict]}
             </Text>
 
             {/* Отказ показывается раньше всех действий и крупно: когда
@@ -270,7 +295,7 @@ export default function AdminScan() {
             {/* Действия доступны, только когда код подходит к выбранной вечеринке */}
             {scan.verdict === 'ok' && !ban && (
               <>
-                {scan.entry.total > 0 && (
+                {canEntry && scan.entry.total > 0 && (
                   <View style={styles.block}>
                     <View style={styles.blockHead}>
                       <Ionicons name="enter-outline" size={18} color={colors.accent} />
@@ -293,6 +318,7 @@ export default function AdminScan() {
                         size="lg"
                         fullWidth
                         onPress={handleEntry}
+                        disabled={busy}
                       />
                     ) : (
                       <Text variant="caption" tone="faint">
@@ -302,7 +328,7 @@ export default function AdminScan() {
                   </View>
                 )}
 
-                {scan.bar.length > 0 && (
+                {canBar && scan.bar.length > 0 && (
                   <View style={styles.block}>
                     <View style={styles.blockHead}>
                       <Ionicons name="wine-outline" size={18} color={colors.accent} />
@@ -347,12 +373,13 @@ export default function AdminScan() {
                         size="lg"
                         fullWidth
                         onPress={handleIssueAll}
+                        disabled={busy || !Object.values(issuing).some((qty) => qty > 0)}
                       />
                     )}
                   </View>
                 )}
 
-                {scan.table && (
+                {canEntry && canBar && scan.table && (
                   <View style={styles.block}>
                     <View style={styles.blockHead}>
                       <Ionicons name="grid-outline" size={18} color={colors.accent} />
@@ -370,11 +397,14 @@ export default function AdminScan() {
               </>
             )}
 
+            {scan.order && <Button label="История выполнения" variant="outline" disabled={busy}
+              onPress={() => router.push({ pathname: '/history', params: { orderId: scan.order!.id } })} />}
             <Button
               label="Сканировать следующий"
               variant="surface"
               fullWidth
               onPress={() => setScan(null)}
+              disabled={busy}
             />
           </Card>
         )}

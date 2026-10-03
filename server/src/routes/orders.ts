@@ -290,6 +290,11 @@ export async function orderRoutes(app: FastifyInstance) {
     }
 
     await db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM orders WHERE id = ${order.id} FOR UPDATE`;
+      const current = await tx.order.findUnique({ where: { id: order.id } });
+      if (!current || !['pending', 'paid'].includes(current.status)) {
+        throw conflict('Этот заказ уже нельзя менять', 'not_cancellable');
+      }
       const affected = await tx.$executeRaw`
         UPDATE order_lines
            SET cancelled_qty = cancelled_qty + ${qty}
@@ -409,6 +414,7 @@ function ensureCancellable(startsAt: Date | null | undefined): void {
  */
 export async function releaseOrder(orderId: string, status: 'cancelled' | 'expired') {
   await db.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM orders WHERE id = ${orderId} FOR UPDATE`;
     const order = await tx.order.findUnique({ where: { id: orderId }, include: { lines: true } });
     if (!order) return;
     if (order.status !== 'pending' && order.status !== 'paid') return;

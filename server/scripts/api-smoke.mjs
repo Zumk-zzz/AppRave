@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 
 import { topUpStock, topUpTickets } from './top-up.mjs';
 
-const BASE = 'http://127.0.0.1:3000';
+const BASE = process.env.API_URL ?? 'http://127.0.0.1:3000';
 
 /**
  * Выполняет SQL в контейнере базы.
@@ -17,7 +17,7 @@ const BASE = 'http://127.0.0.1:3000';
  * главное — это хуже, чем отсутствие теста.
  */
 function sql(query) {
-  return execFileSync('docker', ['exec', 'apprave-db', 'psql', '-U', 'apprave', '-d', 'apprave', '-tAc', query], {
+  return execFileSync('docker', ['exec', process.env.SMOKE_DB_CONTAINER ?? 'apprave-db', 'psql', '-U', 'apprave', '-d', 'apprave', '-tAc', query], {
     encoding: 'utf8',
     windowsHide: true,
   }).trim();

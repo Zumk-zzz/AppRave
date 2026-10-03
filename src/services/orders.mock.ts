@@ -2,9 +2,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { pointsForPurchase } from '@/src/lib/loyalty';
 import { deriveStatus, redeemableOf } from '@/src/lib/order-status';
+import { canNow, type Permission } from '@/src/lib/permissions';
 import { mockCatalog } from './catalog.mock';
 import { currentActor } from './session';
-import { logMock } from './staff.mock';
+import { logMock, mockStaffService } from './staff.mock';
 import type { CheckoutItem, Order, OrderLine, OrdersService } from './types';
 
 /**
@@ -62,18 +63,43 @@ async function find(orderId: string): Promise<Order> {
   return order;
 }
 
+async function requireWork(permission?: Permission) {
+  const actor = currentActor();
+  const shift = actor ? await mockStaffService.currentShift(actor) : null;
+  const may = (p: Permission) => canNow(actor?.staffRole, !!shift, p);
+  if (permission ? !may(permission) : !may('scan:entry') && !may('scan:bar') && !may('orders:read')) {
+    throw new Error('Действие недоступно: проверьте роль и откройте смену');
+  }
+}
+
+function scoped(order: Order): Order {
+  const role = currentActor()?.staffRole;
+  if (role === 'admin' || role === 'manager') return order;
+  const lines = order.lines.filter((line) => line.kind === (role === 'doorman' ? 'ticket' : 'bar'));
+  return { ...order, lines, total: lines.reduce((n, l) => n + l.price * (l.qty - (l.cancelled ?? 0)), 0),
+    pointsEarned: 0, guest: order.guest ? { name: order.guest.name, contact: role === 'bartender' ? undefined : order.guest.contact } : undefined };
+}
+
+function requirePaid(order: Order) {
+  if (order.status !== 'paid' && order.status !== 'used') throw new Error('Заказ не оплачен или отменён');
+}
+
 export const mockOrdersService: OrdersService = {
   async mine() {
     return all();
   },
 
   async forStaff(eventId) {
+    await requireWork();
     const orders = await all();
-    return eventId ? orders.filter((o) => o.eventId === eventId) : orders;
+    return orders.filter((o) => (!eventId || o.eventId === eventId) && ['paid', 'used'].includes(o.status))
+      .map(scoped).filter((o) => o.lines.length > 0);
   },
 
   async byNumber(number) {
-    return (await all()).find((o) => o.number === number) ?? null;
+    await requireWork();
+    const order = (await all()).find((o) => o.number === number);
+    return order ? scoped(order) : null;
   },
 
   async checkout(items, events, user) {
@@ -155,7 +181,9 @@ export const mockOrdersService: OrdersService = {
   },
 
   async admit(order, manual = false) {
+    await requireWork('scan:entry');
     const fresh = await find(order.id);
+    requirePaid(fresh);
 
     let admitted = 0;
     const lines = fresh.lines.map((line) => {
@@ -168,15 +196,19 @@ export const mockOrdersService: OrdersService = {
 
     // Журнал ведёт тот, кто исполняет действие. На сервере это делает
     // он сам, здесь — сервис: экрану журнал не доверяют ни там, ни тут.
+    if (!admitted) throw new Error('Нет неиспользованных билетов на вход');
     await log(manual ? 'entry_manual' : 'entry_admitted', fresh.number, `${admitted} гостей`);
 
-    return replace(withStatus({ ...fresh, lines }));
+    return scoped(await replace(withStatus({ ...fresh, lines })));
   },
 
   async issue(order, lineId, count) {
+    await requireWork('scan:bar');
     const fresh = await find(order.id);
+    requirePaid(fresh);
     const line = fresh.lines.find((l) => l.id === lineId);
-    if (!line) throw new Error('Позиция не найдена');
+    if (!line || line.kind !== 'bar') throw new Error('Позиция не найдена');
+    if (!Number.isInteger(count) || count < 1 || count > redeemableOf(line)) throw new Error('Недопустимое количество');
 
     const take = Math.min(count, redeemableOf(line));
     if (take <= 0) return fresh;
@@ -187,7 +219,7 @@ export const mockOrdersService: OrdersService = {
 
     await log('bar_issued', fresh.number, `${line.title} × ${take}`);
 
-    return replace(withStatus({ ...fresh, lines }));
+    return scoped(await replace(withStatus({ ...fresh, lines })));
   },
 };
 

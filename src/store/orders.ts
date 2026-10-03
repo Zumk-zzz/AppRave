@@ -108,13 +108,13 @@ export const useOrdersStore = create<OrdersState>((set, get) => ({
 
   async admit(order, manual) {
     const fresh = await ordersService.admit(order, manual);
-    merge(set, get, fresh);
+    set({ staffOrders: get().staffOrders.map((o) => o.id === fresh.id ? fresh : o) });
     return fresh;
   },
 
   async issue(order, lineId, count) {
     const fresh = await ordersService.issue(order, lineId, count);
-    merge(set, get, fresh);
+    set({ staffOrders: get().staffOrders.map((o) => o.id === fresh.id ? fresh : o) });
     return fresh;
   },
 }));

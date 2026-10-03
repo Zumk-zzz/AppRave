@@ -142,6 +142,8 @@ export default function ProfileTab() {
       <ContactsCard />
 
       <View style={styles.menu}>
+        {staffRole && <Row icon="time-outline" label="История выполнения"
+          onPress={() => router.push('/history')} />}
         {canBuy && (
           <Row
             icon="ticket-outline"

@@ -110,6 +110,7 @@ async function refundable(eventId: string) {
  */
 async function refundOrder(orderId: string): Promise<number | null> {
   return db.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM orders WHERE id = ${orderId} FOR UPDATE`;
     const order = await tx.order.findUnique({
       where: { id: orderId },
       include: { lines: true, payments: true },

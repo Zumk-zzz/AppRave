@@ -20,7 +20,7 @@ interface ApiShift {
 interface ApiAction {
   id: string;
   kind: StaffAction['kind'];
-  actor: { name: string; role: UserRole };
+  actor: { id?: string; name: string; role: UserRole };
   orderId: string | null;
   shiftId: string | null;
   details: Record<string, unknown> | null;
@@ -70,6 +70,14 @@ export const apiStaffService: StaffService = {
   async actions(limit = 100) {
     const actions = await request<ApiAction[]>(`/staff/actions?limit=${limit}`);
     return actions.map(mapAction);
+  },
+
+  async history(cursor, orderId) {
+    const query = new URLSearchParams();
+    if (cursor) query.set('cursor', cursor);
+    if (orderId) query.set('orderId', orderId);
+    const page = await request<{ items: ApiAction[]; nextCursor: string | null }>(`/staff/fulfillments?${query}`);
+    return { items: page.items.map(mapAction), nextCursor: page.nextCursor };
   },
 
   async members() {
@@ -130,12 +138,11 @@ function mapAction(a: ApiAction): StaffAction {
   return {
     id: a.id,
     kind: a.kind,
-    // Сервер не отдаёт идентификатор исполнителя: журнал показывается
-    // тому, кто и так видит либо только свои записи, либо все
-    actorId: '',
+    actorId: a.actor.id ?? '',
     actorName: a.actor.name,
     actorRole: a.actor.role,
     orderId: a.orderId ?? undefined,
+    orderNumber: typeof a.details?.number === 'string' ? a.details.number : undefined,
     shiftId: a.shiftId ?? undefined,
     summary: summarize(a),
     createdAt: a.createdAt,

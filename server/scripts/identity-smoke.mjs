@@ -1,5 +1,5 @@
 /** Проверка входа по телефону и почте, связывания каналов и ролей на аккаунте. */
-const BASE = 'http://127.0.0.1:3000';
+const BASE = process.env.API_URL ?? 'http://127.0.0.1:3000';
 let failures = 0;
 
 const check = (name, ok, detail = '') => {

@@ -393,6 +393,7 @@ export interface StaffAction {
   actorName: string;
   actorRole: UserRole;
   orderId?: string;
+  orderNumber?: string;
   /** Короткое описание для журнала: «Негрони × 2», «2 гостя» */
   summary?: string;
   shiftId?: string;
@@ -450,6 +451,7 @@ export interface StaffService {
 
   /** Журнал: сотрудник видит свои действия, управляющий — все. */
   actions(limit?: number): Promise<StaffAction[]>;
+  history(cursor?: string, orderId?: string): Promise<{ items: StaffAction[]; nextCursor: string | null }>;
 
   /**
    * Смены команды: кто в зале сейчас и кто работал раньше.

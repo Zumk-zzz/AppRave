@@ -1,9 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { Badge, Card, Screen, Text } from '@/src/components';
+import { Badge, Button, Card, Screen, Text } from '@/src/components';
 import { nearestEvent } from '@/src/lib/events';
 import { formatEventDate, pluralWithCount } from '@/src/lib/format';
 import { eventsService, type ClubEvent } from '@/src/services';
@@ -17,6 +17,7 @@ import { colors, radius, spacing } from '@/src/theme';
  * когда гость уже стоит у стойки.
  */
 export default function QueueTab() {
+  const router = useRouter();
   const orders = useOrdersStore((s) => s.staffOrders);
   const loadStaff = useOrdersStore((s) => s.loadStaff);
 
@@ -66,6 +67,7 @@ export default function QueueTab() {
           Готовить заранее
         </Text>
         <Text variant="display">Очередь</Text>
+        <Button label="История выдач" variant="outline" onPress={() => router.push('/history')} />
         <Text variant="body" tone="muted" style={styles.lead}>
           {totalDrinks > 0
             ? `${pluralWithCount(totalDrinks, 'напиток', 'напитка', 'напитков')} ждут выдачи`
