@@ -7,7 +7,7 @@
     "dev": "tsx watch src/main.ts",
     "dev:public": "cross-env PUBLIC_ACCESS=true tsx watch src/main.ts",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/main.js",
+    "start": "node dist/src/main.js",
     "typecheck": "tsc --noEmit",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",

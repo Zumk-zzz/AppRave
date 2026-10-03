@@ -1,0 +1,76 @@
+name: Project checks
+
+on:
+  push:
+    branches: [main, 'codex/**']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mobile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npx expo-doctor
+      - name: Build iOS bundle (Expo SDK 54)
+        run: npx expo export --platform ios
+
+  server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: server
+    env:
+      DATABASE_URL: postgresql://apprave:apprave@localhost:5433/apprave?schema=public
+      JWT_SECRET: ci-only-not-a-production-secret
+      PUBLIC_ACCESS: 'false'
+      DEMO_SMS_CODE: '0000'
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+      - run: npm run prisma:generate
+      - run: npm run typecheck
+      - run: npm run build
+      # Smoke scripts expect the apprave-db container. This is a disposable CI database.
+      - run: docker compose up -d --wait
+      - run: npm run prisma:deploy
+      - run: npm run seed
+      - name: Start API and wait for database health
+        run: |
+          npm start > /tmp/apprave-api.log 2>&1 &
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:3000/health; then exit 0; fi
+            sleep 2
+          done
+          cat /tmp/apprave-api.log
+          exit 1
+      - run: npm run smoke:all
+      - name: API diagnostics
+        if: failure()
+        run: cat /tmp/apprave-api.log 2>/dev/null || true
+      - name: Stop disposable database
+        if: always()
+        run: docker compose down --volumes
