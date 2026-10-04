@@ -5,7 +5,7 @@ import * as Haptics from 'expo-haptics';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
 
-import { Badge, Button, Card, Screen, Stepper, Text } from '@/src/components';
+import { Badge, Button, Card, Screen, Stepper, Text, Toggle } from '@/src/components';
 import { nearestEvent } from '@/src/lib/events';
 import { formatEventDate, pluralWithCount } from '@/src/lib/format';
 import {
@@ -61,6 +61,8 @@ export default function AdminScan() {
   /** Сколько штук каждой позиции бара сотрудник собирается выдать прямо сейчас */
   const [issuing, setIssuing] = useState<Record<string, number>>({});
   const [busy, setBusy] = useState(false);
+  const [entryCount, setEntryCount] = useState(1);
+  const [ownerPresent, setOwnerPresent] = useState(true);
   const locked = useRef(false);
   const actionBusy = useRef(false);
 
@@ -77,7 +79,9 @@ export default function AdminScan() {
   /** Показывает вердикт и заранее подставляет «выдать всё, что осталось». */
   const show = useCallback((result: ScanSummary) => {
     setScan(result);
-    setIssuing(Object.fromEntries(result.bar.map((b) => [b.lineId, b.left])));
+    setEntryCount(Math.max(1, result.entry.left));
+    setOwnerPresent(true);
+    setIssuing(Object.fromEntries(result.bar.map((b) => [b.lineId, b.ready])));
 
     Haptics.notificationAsync(
       isPositive(result.verdict)
@@ -119,7 +123,8 @@ export default function AdminScan() {
     const hasLeft = parts.entry.left > 0 || parts.bar.some((b) => b.left > 0);
 
     setScan({ ...parts, order: fresh, verdict: hasLeft ? 'ok' : 'nothing-left' });
-    setIssuing(Object.fromEntries(parts.bar.map((b) => [b.lineId, b.left])));
+    setEntryCount(Math.max(1, parts.entry.left));
+    setIssuing(Object.fromEntries(parts.bar.map((b) => [b.lineId, b.ready])));
   }, []);
 
   /**
@@ -141,7 +146,8 @@ export default function AdminScan() {
       // Убираем выбор и перечитываем сервер, чтобы не повторить их вслепую.
       setIssuing({});
       if (scan?.order) {
-        const fresh = await findOrder(scan.order.number).catch(() => null);
+        const key = scan.order.invitationToken ? `invite:${scan.order.invitationToken}` : scan.order.number;
+        const fresh = await findOrder(key).catch(() => null);
         if (fresh) refresh(fresh);
         else setScan(null);
       }
@@ -156,7 +162,7 @@ export default function AdminScan() {
   const handleEntry = () => {
     const order = scan?.order;
     if (!order || !canEntry) return;
-    void run(() => admit(order));
+    void run(() => admit(order, false, entryCount, ownerPresent));
   };
 
   const handleIssueAll = () => {
@@ -306,23 +312,29 @@ export default function AdminScan() {
                         label={
                           scan.entry.left > 0
                             ? pluralWithCount(scan.entry.left, 'гость', 'гостя', 'гостей')
-                            : 'Прошли'
+                            : 'Нет свободных проходов'
                         }
                         tone={scan.entry.left > 0 ? 'accent' : 'success'}
                       />
                     </View>
 
                     {scan.entry.left > 0 ? (
+                      <View style={styles.block}>
+                      <Text variant="caption" tone="muted">Доступно по этому QR: {scan.entry.left}. Приглашения друзей учитываются отдельно.</Text>
+                      <Stepper value={entryCount} onChange={setEntryCount} min={1} max={scan.entry.left} />
+                      {!scan.order?.invitationToken && <Toggle label="Владелец заказа входит" value={ownerPresent} onChange={setOwnerPresent}
+                        hint="Отметка разрешит владельцу запускать приготовление своих напитков" />}
                       <Button
-                        label={`Пропустить ${pluralWithCount(scan.entry.left, 'гостя', 'гостей', 'гостей')}`}
+                        label={`Пропустить ${pluralWithCount(entryCount, 'гостя', 'гостей', 'гостей')}`}
                         size="lg"
                         fullWidth
                         onPress={handleEntry}
                         disabled={busy}
                       />
+                      </View>
                     ) : (
                       <Text variant="caption" tone="faint">
-                        Все {scan.entry.total} уже прошли
+                        Свободных проходов по этому QR нет. Друзья с приглашениями показывают личные коды.
                       </Text>
                     )}
                   </View>
@@ -349,19 +361,19 @@ export default function AdminScan() {
                             tone={position.left > 0 ? 'muted' : 'faint'}
                           >
                             {position.left > 0
-                              ? `Осталось выдать ${position.left} из ${position.qty}`
+                              ? `Можно забрать: ${position.ready} · всего осталось ${position.left}`
                               : `Выдано полностью (${position.qty})`}
                           </Text>
                         </View>
 
-                        {position.left > 0 && (
+                        {position.ready > 0 && (
                           <Stepper
                             value={issuing[position.lineId] ?? 0}
                             onChange={(next) =>
                               setIssuing((s) => ({ ...s, [position.lineId]: next }))
                             }
                             min={0}
-                            max={position.left}
+                            max={position.ready}
                           />
                         )}
                       </View>
@@ -397,7 +409,7 @@ export default function AdminScan() {
               </>
             )}
 
-            {scan.order && <Button label="История выполнения" variant="outline" disabled={busy}
+            {scan.order && !scan.order.invitationToken && <Button label="История выполнения" variant="outline" disabled={busy}
               onPress={() => router.push({ pathname: '/history', params: { orderId: scan.order!.id } })} />}
             <Button
               label="Сканировать следующий"

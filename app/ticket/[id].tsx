@@ -8,6 +8,7 @@ import { Badge, Button, Card, OfflineNotice, Screen, Text } from '@/src/componen
 import { formatEventDate, formatPrice, pluralWithCount } from '@/src/lib/format';
 import { canCancel, CANCEL_BLOCK_TEXT, hoursUntil, REFUND_CUTOFF_HOURS } from '@/src/lib/refund';
 import { useCancelOrder } from '@/src/features/orders/useCancelOrder';
+import { FulfillmentPanel } from '@/src/features/orders/FulfillmentPanel';
 import {
   isLineCancellable,
   ORDER_STATUS_LABEL,
@@ -49,7 +50,7 @@ export default function TicketScreen() {
 
     Alert.alert(
       'Отменить позицию?',
-      `«${line.title}» — ${left} шт. Вернём в продажу, деньги придут на карту в течение трёх дней.`,
+      `«${line.title}» — ${left} шт. Неиспользованный остаток вернётся в продажу. Приглашения по этой позиции будут отозваны. Оплата демонстрационная: реальные деньги не списывались.`,
       [
         { text: 'Оставить', style: 'cancel' },
         {
@@ -128,6 +129,7 @@ export default function TicketScreen() {
         </Text>
       )}
 
+      <FulfillmentPanel order={order} />
       <Card style={styles.details}>
         {ticketLines.length > 0 && (
           <Section title="Билеты">
@@ -146,6 +148,7 @@ export default function TicketScreen() {
             {tableLines.map((line) => (
               <View key={line.refId} style={styles.tableBlock}>
                 <Row left={line.title} right={formatPrice(line.price)} />
+                <Text variant="caption" tone="accent">{line.entryIncluded ? `Вход включён: ${line.entryIncluded} · прошли ${line.entryRedeemed ?? 0}` : 'Вход не включён в бронь'}</Text>
                 {line.guests && line.guests.length > 0 && (
                   <Text variant="caption" tone="faint" style={styles.guests}>
                     {pluralWithCount(line.guests.length, 'гость', 'гостя', 'гостей')}:{' '}

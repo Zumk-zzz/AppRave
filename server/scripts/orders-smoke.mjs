@@ -206,6 +206,9 @@ const wrongRole = await api(`/staff/scan/${order.number}/issue`, {
 check('фейсер напитки не выдаёт', wrongRole.status === 403, `статус ${wrongRole.status}`);
 
 // Осталась одна порция: две куплены, одну гость отменил
+await api(`/orders/${order.id}/bar/request`, { method: 'POST', token: guest.token, body: {} });
+await api(`/staff/bar/${barLine.id}/prepare`, { method: 'POST', token: bartender.token, body: {} });
+await api(`/staff/bar/${barLine.id}/ready`, { method: 'POST', token: bartender.token, body: { qty: 1, expectedPreparing: 1 } });
 const issue = await api(`/staff/scan/${order.number}/issue`, {
   method: 'POST',
   token: bartender.token,

@@ -128,6 +128,9 @@ export default function AdminTables() {
               </View>
             </View>
 
+            <NumberField label="Проходов включено" value={draft.includedEntries ?? 0}
+              min={0} max={draft.seats} onChangeValue={(includedEntries) => setDraft({ ...draft, includedEntries })} />
+            <Text variant="caption" tone="muted">0 — вход покупается отдельно. Изменение действует только для новых броней.</Text>
             <Toggle
               label="Снят с продажи"
               hint="Ремонт или служебная бронь — стол занят на все даты"

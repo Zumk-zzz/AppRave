@@ -1,4 +1,5 @@
 import type { CheckoutItem, Order, OrdersService } from '@/src/services/types';
+import { entryAvailable } from '@/src/lib/fulfillment';
 import { cached } from './cache';
 import { ApiError, request } from './client';
 import { mapOrder, type ApiOrder } from './mappers';
@@ -21,6 +22,21 @@ interface CreateBody {
 }
 
 export const apiOrdersService: OrdersService = {
+  async byId(id) { return mapOrder(await request<ApiOrder>(`/orders/${id}`)); },
+  async requestBar(id) { return mapOrder(await request<ApiOrder>(`/orders/${id}/bar/request`, { method: 'POST', body: {} })); },
+  async prepareBar(order, lineId) {
+    await request(`/staff/bar/${lineId}/prepare`, { method: 'POST', body: {} });
+    return (await apiOrdersService.byNumber(order.number))!;
+  },
+  async readyBar(order, lineId, qty) {
+    await request(`/staff/bar/${lineId}/ready`, { method: 'POST', body: { qty, expectedPreparing: order.lines.find((l) => l.id === lineId)?.preparingQty ?? 0 } });
+    return (await apiOrdersService.byNumber(order.number))!;
+  },
+  invitations: (id) => request(`/orders/${id}/invitations`),
+  createInvitation: (id, name, requestId) => request(`/orders/${id}/invitations`, { method: 'POST', body: { name, requestId } }),
+  async revokeInvitation(token) { await request(`/invitations/${token}/revoke`, { method: 'POST', body: {} }); },
+  invitation: (token) => request(`/invitations/${token}`),
+  claimInvitation: (token) => request(`/invitations/${token}/claim`, { method: 'POST', body: {} }),
   async mine() {
     // Единственное место, где офлайн-копия по-настоящему нужна:
     // в клубе плохая связь, а гостю показывать QR на входе
@@ -38,7 +54,8 @@ export const apiOrdersService: OrdersService = {
 
   async byNumber(number) {
     try {
-      const res = await request<{ order: ApiOrder }>(`/staff/scan/${encodeURIComponent(number)}`);
+      const path = number.startsWith('invite:') ? `/staff/invitations/${encodeURIComponent(number.slice(7))}` : `/staff/scan/${encodeURIComponent(number)}`;
+      const res = await request<{ order: ApiOrder }>(path);
       return mapOrder(res.order);
     } catch (e) {
       if (e instanceof ApiError && e.status === 404) return null;
@@ -79,10 +96,14 @@ export const apiOrdersService: OrdersService = {
     return mapOrder(order);
   },
 
-  async admit(order, manual = false) {
+  async admit(order, manual = false, qty, ownerPresent = true) {
+    if (order.invitationToken) {
+      await request(`/staff/invitations/${order.invitationToken}/admit`, { method: 'POST', body: {} });
+      return (await apiOrdersService.byNumber(`invite:${order.invitationToken}`))!;
+    }
     const res = await request<{ order: ApiOrder }>(
       `/staff/scan/${encodeURIComponent(order.number)}/admit`,
-      { method: 'POST', body: { manual } },
+      { method: 'POST', body: { manual, qty, ownerPresent, expectedRemaining: order.lines.reduce((n, l) => n + entryAvailable(l), 0) } },
     );
     return mapOrder(res.order);
   },
@@ -90,7 +111,7 @@ export const apiOrdersService: OrdersService = {
   async issue(order, lineId, count) {
     const res = await request<{ order: ApiOrder }>(
       `/staff/scan/${encodeURIComponent(order.number)}/issue`,
-      { method: 'POST', body: { lineId, qty: count } },
+      { method: 'POST', body: { lineId, qty: count, expectedRedeemed: order.lines.find((l) => l.id === lineId)?.redeemed } },
     );
     return mapOrder(res.order);
   },

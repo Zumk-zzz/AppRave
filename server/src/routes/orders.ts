@@ -8,6 +8,7 @@ import { env } from '../env.js';
 import { isLive } from '../lib/events.js';
 import { badRequest, conflict, notFound } from '../lib/http-error.js';
 import { orderNumber } from '../lib/ids.js';
+import { revokeInvitations } from '../lib/fulfillment.js';
 import { pointsForPurchase, tierForPoints } from '../lib/money.js';
 
 const createSchema = z.object({
@@ -137,6 +138,7 @@ export async function orderRoutes(app: FastifyInstance) {
           tableToBook = table;
           lines.push({
             kind: 'table',
+            entryIncluded: table.includedEntries,
             tableId: table.id,
             title: `Стол ${table.label}`,
             subtitle: event.title,
@@ -295,6 +297,10 @@ export async function orderRoutes(app: FastifyInstance) {
       if (!current || !['pending', 'paid'].includes(current.status)) {
         throw conflict('Этот заказ уже нельзя менять', 'not_cancellable');
       }
+      const currentLine = await tx.orderLine.findUniqueOrThrow({ where: { id: lineId } });
+      if (currentLine.kind === 'table' && currentLine.entryRedeemed > 0) throw conflict('По брони уже прошли гости', 'entry_used');
+      if (currentLine.kind === 'bar' && currentLine.barRequestedAt) throw conflict('Приготовление уже запрошено', 'bar_requested');
+      await revokeInvitations(tx, order.id, lineId);
       const affected = await tx.$executeRaw`
         UPDATE order_lines
            SET cancelled_qty = cancelled_qty + ${qty}
@@ -358,10 +364,11 @@ async function settleStatus(tx: Prisma.TransactionClient, orderId: string) {
   if (!order) return;
   if (order.status !== 'pending' && order.status !== 'paid') return;
 
-  const relevant = order.lines.filter((l) => l.kind !== 'table');
-  if (relevant.length === 0 || !relevant.every((l) => leftOf(l) === 0)) return;
+  const relevant = order.lines.filter((l) => l.kind !== 'table' || l.entryIncluded > 0);
+  if (relevant.length === 0 || !relevant.every((l) => l.kind === 'table'
+    ? l.cancelledQty > 0 || l.entryRedeemed >= l.entryIncluded : leftOf(l) === 0)) return;
 
-  const used = relevant.some((l) => l.redeemed > 0);
+  const used = relevant.some((l) => l.redeemed > 0 || l.entryRedeemed > 0);
 
   await tx.order.update({
     where: { id: order.id },
@@ -418,6 +425,10 @@ export async function releaseOrder(orderId: string, status: 'cancelled' | 'expir
     const order = await tx.order.findUnique({ where: { id: orderId }, include: { lines: true } });
     if (!order) return;
     if (order.status !== 'pending' && order.status !== 'paid') return;
+    if (status === 'cancelled' && order.lines.some((l) => l.entryRedeemed > 0 || l.barRequestedAt)) {
+      throw conflict('Заказ уже обслуживается — обратитесь к сотруднику', 'fulfillment_started');
+    }
+    await revokeInvitations(tx, order.id);
 
     for (const line of order.lines) {
       // Возвращается только невыданное. Если гость успел забрать один
@@ -516,6 +527,14 @@ export function toLineDtos(order: OrderRow) {
     qty: l.qty,
     redeemed: l.redeemed,
     cancelledQty: l.cancelledQty,
+    entryIncluded: l.entryIncluded,
+    entryRedeemed: l.entryRedeemed,
+    entryReserved: l.entryReserved,
+    barRequestedAt: l.barRequestedAt?.toISOString() ?? null,
+    preparingQty: l.preparingQty,
+    readyQty: l.readyQty,
+    preparedById: l.preparedById,
+    preparedByName: l.preparedByName,
     // Список гостей живёт у брони, но показывается в строке стола
     guests:
       l.kind === 'table'

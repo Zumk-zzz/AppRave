@@ -1,16 +1,17 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
-import { Badge, Button, Card, Field, Screen, Segmented, Sheet, Text } from '@/src/components';
+import { Badge, Button, Card, Field, Screen, Segmented, Sheet, Stepper, Toggle, Text } from '@/src/components';
+import { entryAvailable, entryTotal } from '@/src/lib/fulfillment';
 import { nearestEvent } from '@/src/lib/events';
 import { formatEventDate, pluralWithCount } from '@/src/lib/format';
 import { eventsService, type ClubEvent, type Order } from '@/src/services';
 import { formatContact } from '@/src/lib/contact';
 import { useAuthStore } from '@/src/store/auth';
-import { redeemableOf, useOrdersStore } from '@/src/store/orders';
+import { useOrdersStore } from '@/src/store/orders';
 import { useStaffStore } from '@/src/store/staff';
 import { colors, fonts, fontSize, radius, spacing } from '@/src/theme';
 
@@ -37,6 +38,11 @@ export default function GuestsTab() {
   const [tab, setTab] = useState<'list' | 'bans'>('list');
   const [banTarget, setBanTarget] = useState<{ contact: string; name?: string } | null>(null);
   const [reason, setReason] = useState('');
+  const [entryTarget, setEntryTarget] = useState<Order | null>(null);
+  const [entryCount, setEntryCount] = useState(1);
+  const [ownerPresent, setOwnerPresent] = useState(true);
+  const [entering, setEntering] = useState(false);
+  const entryLock = useRef(false);
 
   // Вечеринку не выбирают: на входе работают с той, что идёт сегодня.
   // Выбор был лишним шагом, а ошибка в нём означала пустой список
@@ -66,7 +72,6 @@ export default function GuestsTab() {
     return orders
       .filter((o) => o.eventId === eventId && o.status !== 'cancelled')
       .map((order) => {
-        const tickets = order.lines.filter((l) => l.kind === 'ticket');
         const table = order.lines.find((l) => l.kind === 'table');
         // Контакт приходит с сервера. Без него — третье поле QR: номер
         // карты в автономном режиме, и он тоже опознаёт человека
@@ -76,8 +81,8 @@ export default function GuestsTab() {
           order,
           contact,
           ban: activeBans.find((b) => b.contact === contact),
-          total: tickets.reduce((n, l) => n + l.qty, 0),
-          left: tickets.reduce((n, l) => n + redeemableOf(l), 0),
+          total: order.lines.reduce((n, l) => n + entryTotal(l), 0),
+          left: order.lines.reduce((n, l) => n + entryAvailable(l), 0),
           table: table?.title,
           guests: table?.guests ?? [],
         };
@@ -121,27 +126,23 @@ export default function GuestsTab() {
       return;
     }
 
-    Alert.alert(
-      'Пропустить без кода?',
-      'Гость не показал QR. Отметка попадёт в журнал как ручной пропуск.',
-      [
-        { text: 'Отмена', style: 'cancel' },
-        {
-          text: 'Пропустить',
-          onPress: () => {
-            void (async () => {
-              try {
-                await admit(order, true);
-                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              } catch (e) {
-                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-                Alert.alert('Не получилось', e instanceof Error ? e.message : 'Попробуйте ещё раз');
-              }
-            })();
-          },
-        },
-      ],
-    );
+    setEntryTarget(order);
+    setEntryCount(1);
+    setOwnerPresent(true);
+  };
+
+  const confirmEntry = async () => {
+    if (!entryTarget || entryLock.current) return;
+    entryLock.current = true; setEntering(true);
+    try {
+      await admit(entryTarget, true, entryCount, ownerPresent);
+      setEntryTarget(null);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e) {
+      Alert.alert('Не получилось', e instanceof Error ? e.message : 'Обновите список');
+      setEntryTarget(null);
+      if (eventId) await loadStaff(eventId);
+    } finally { entryLock.current = false; setEntering(false); }
   };
 
   return (
@@ -154,7 +155,7 @@ export default function GuestsTab() {
         <Text variant="body" tone="muted" style={styles.lead}>
           {waiting > 0
             ? `Ждём ${pluralWithCount(waiting, 'гостя', 'гостей', 'гостей')}`
-            : 'Все, кто купил билет, уже прошли'}
+            : 'Свободных проходов по основным QR нет'}
         </Text>
       </View>
 
@@ -255,7 +256,7 @@ export default function GuestsTab() {
                   <Badge label="Отказ" tone="danger" />
                 ) : row.total > 0 ? (
                   <Badge
-                    label={row.left > 0 ? `${row.left} из ${row.total}` : 'Прошли'}
+                    label={row.left > 0 ? `${row.left} из ${row.total}` : 'Нет свободных проходов'}
                     tone={row.left > 0 ? 'accent' : 'success'}
                   />
                 ) : null}
@@ -302,6 +303,16 @@ export default function GuestsTab() {
       </View>
       </>
       )}
+
+      <Sheet visible={entryTarget !== null} title="Пропустить без кода" onClose={() => { if (!entering) setEntryTarget(null); }}>
+        <View style={styles.sheet}>
+          <Text variant="body">Отметка попадёт в журнал как ручной проход. Выберите, сколько человек сейчас перед вами.</Text>
+          <Stepper value={entryCount} onChange={setEntryCount} min={1} max={entryTarget?.lines.reduce((n, l) => n + entryAvailable(l), 0) ?? 1} />
+          <Toggle label="Владелец заказа входит сейчас" value={ownerPresent} onChange={setOwnerPresent} disabled={entering} />
+          <Text variant="caption" tone="muted">Зарезервированные приглашениями проходы доступны только по личным QR друзей.</Text>
+          <Button label={`Пропустить: ${entryCount}`} disabled={entering} onPress={() => void confirmEntry()} />
+        </View>
+      </Sheet>
 
       <Sheet
         visible={banTarget !== null}

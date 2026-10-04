@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { revokeInvitations } from '../lib/fulfillment.js';
 import { z } from 'zod';
 
 import { requirePermission } from '../auth/guard.js';
@@ -119,6 +120,8 @@ async function refundOrder(orderId: string): Promise<number | null> {
     if (!order) return null;
     // Повторный вызов не должен вернуть деньги дважды
     if (order.status !== 'paid' && order.status !== 'used') return null;
+    await revokeInvitations(tx, orderId);
+    await tx.orderLine.updateMany({ where: { orderId }, data: { preparingQty: 0, readyQty: 0 } });
 
     for (const line of order.lines) {
       const left = Math.max(0, line.qty - line.redeemed - line.cancelledQty);

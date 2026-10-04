@@ -164,6 +164,7 @@ function toTableBody(table: TableLayout) {
     label: table.label,
     zone: table.zone,
     seats: table.seats,
+    includedEntries: table.includedEntries ?? 0,
     depositKopecks: toKopecks(table.deposit),
     blocked: table.blocked,
     x: table.x,

@@ -32,15 +32,15 @@ export function deriveStatus(order: Order): OrderStatus {
   // резерв сгорел или деньги вернули. Их назначает не выдача, а оплата.
   if (order.status !== 'paid' && order.status !== 'used') return order.status;
 
-  // Стол не выдают — он либо есть, либо нет, и на закрытие заказа не влияет
-  const relevant = order.lines.filter((l) => l.kind !== 'table');
+  // Стол с включённым входом закрывается после прохода всей компании.
+  const relevant = order.lines.filter((l) => l.kind !== 'table' || (l.entryIncluded ?? 0) > 0);
   if (relevant.length === 0) return order.status;
 
-  if (!relevant.every(isLineClosed)) return 'paid';
+  if (!relevant.every((l) => l.kind === 'table' ? !!l.cancelled || (l.entryRedeemed ?? 0) >= (l.entryIncluded ?? 0) : isLineClosed(l))) return 'paid';
 
   // Всё закрыто. Если хоть что-то успели получить — заказ состоялся,
   // иначе это полная отмена.
-  return relevant.some((l) => l.redeemed > 0) ? 'used' : 'cancelled';
+  return relevant.some((l) => l.redeemed > 0 || (l.entryRedeemed ?? 0) > 0) ? 'used' : 'cancelled';
 }
 
 export function withDerivedStatus(order: Order): Order {

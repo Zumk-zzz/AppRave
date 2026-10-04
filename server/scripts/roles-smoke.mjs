@@ -136,6 +136,9 @@ const again = await api(`/staff/scan/${num}/admit`, { method: 'POST', token: doo
 check('повторный проход отклонён', again.status === 409, `статус ${again.status}`);
 
 console.log('\n=== Частичная выдача напитков ===');
+await api(`/orders/${order.body.id}/bar/request`, { method: 'POST', token: guest.token, body: {} });
+await api(`/staff/bar/${barLine.lineId}/prepare`, { method: 'POST', token: bartender.token, body: {} });
+await api(`/staff/bar/${barLine.lineId}/ready`, { method: 'POST', token: bartender.token, body: { qty: 3, expectedPreparing: 3 } });
 const issue1 = await api(`/staff/scan/${num}/issue`, { method: 'POST', token: bartender.token, body: { lineId: barLine.lineId, qty: 1 } });
 check('выдан 1 из 3', issue1.status === 200 && issue1.body?.order.bar[0].left === 2, `осталось ${issue1.body?.order.bar[0].left}`);
 

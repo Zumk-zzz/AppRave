@@ -1,200 +1,94 @@
-import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
-
-import { Badge, Button, Card, Screen, Text } from '@/src/components';
+import { useCallback, useRef, useState } from 'react';
+import { Alert, AppState, StyleSheet, View } from 'react-native';
+import { Badge, Button, Card, Screen, Segmented, Stepper, Text } from '@/src/components';
 import { nearestEvent } from '@/src/lib/events';
-import { formatEventDate, pluralWithCount } from '@/src/lib/format';
-import { eventsService, type ClubEvent } from '@/src/services';
-import { redeemableOf, useOrdersStore } from '@/src/store/orders';
-import { colors, radius, spacing } from '@/src/theme';
+import { barProgress } from '@/src/lib/fulfillment';
+import { eventsService, ordersService, type Order } from '@/src/services';
+import { useAuthStore, useCan } from '@/src/store/auth';
+import { spacing } from '@/src/theme';
 
-/**
- * Очередь бара: оплаченные предзаказы, которые ещё не выданы.
- *
- * Нужна, чтобы бармен готовил заранее, а не начинал искать бутылку,
- * когда гость уже стоит у стойки.
- */
+type Stage = 'queued' | 'preparing' | 'ready';
 export default function QueueTab() {
   const router = useRouter();
-  const orders = useOrdersStore((s) => s.staffOrders);
-  const loadStaff = useOrdersStore((s) => s.loadStaff);
+  const actor = useAuthStore((s) => s.user);
+  const canBar = useCan('scan:bar');
+  const canRead = useCan('orders:read');
+  const actorId = actor?.id;
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [title, setTitle] = useState('');
+  const [stage, setStage] = useState<Stage>('queued');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  const locked = useRef(false);
+  const generation = useRef(0);
+  const reading = useRef(false);
 
-  const [event, setEvent] = useState<ClubEvent | null>(null);
-  const eventId = event?.id ?? null;
+  const refresh = useCallback(async () => {
+    if (reading.current || locked.current || !actorId || (!canBar && !canRead)) return;
+    const request = generation.current;
+    reading.current = true;
+    try {
+      const event = nearestEvent(await eventsService.list());
+      const data = event ? await ordersService.forStaff(event.id) : [];
+      if (generation.current !== request) return;
+      setTitle(event?.title ?? 'Ближайшей вечеринки нет');
+      setOrders(data); setError('');
+    } catch (e) {
+      if (generation.current === request) setError(e instanceof Error ? e.message : 'Не удалось обновить очередь');
+    } finally { if (generation.current === request) reading.current = false; }
+  }, [canBar, canRead, actorId]);
 
-  // Вечеринка определяется сама: бармен готовит напитки для той ночи,
-  // которая идёт, и выбирать её из списка незачем
-  useFocusEffect(
-    useCallback(() => {
-      void (async () => {
-        setEvent(nearestEvent(await eventsService.list()));
-      })();
-    }, []),
-  );
+  useFocusEffect(useCallback(() => {
+    generation.current++; reading.current = false; setOrders([]);
+    void refresh();
+    const timer = setInterval(() => { if (AppState.currentState === 'active') void refresh(); }, 5000);
+    return () => { clearInterval(timer); generation.current++; reading.current = false; };
+  }, [refresh]));
 
-  // Очередь перечитывается при каждом возвращении на вкладку: гость мог
-  // доплатить напиток, пока бармен смотрел в другой экран
-  useFocusEffect(
-    useCallback(() => {
-      if (eventId) void loadStaff(eventId);
-    }, [eventId, loadStaff]),
-  );
+  const act = async (action: () => Promise<Order>) => {
+    if (locked.current) return;
+    locked.current = true; setBusy(true);
+    generation.current++; reading.current = false;
+    try { await action(); }
+    catch (e) { Alert.alert('Не получилось', e instanceof Error ? e.message : 'Обновите очередь'); }
+    finally { locked.current = false; await refresh(); setBusy(false); }
+  };
 
-  const pending = useMemo(() => {
-    return orders
-      .filter((o) => o.status !== 'cancelled' && o.eventId === eventId)
-      .map((order) => ({
-        order,
-        items: order.lines.filter((line) => line.kind === 'bar' && redeemableOf(line) > 0),
-        table: order.lines.find((l) => l.kind === 'table'),
-      }))
-      .filter((x) => x.items.length > 0);
-  }, [orders, eventId]);
+  const rows = orders.flatMap((order) => order.lines.filter((line) => {
+    if (line.kind !== 'bar' || order.status !== 'paid') return false;
+    if (stage === 'queued') return !!line.barRequestedAt && !line.preparedById && line.qty > line.redeemed + (line.cancelled ?? 0);
+    return stage === 'preparing' ? (line.preparingQty ?? 0) > 0 : (line.readyQty ?? 0) > 0;
+  }).map((line) => ({ order, line }))).sort((a, b) => (a.line.barRequestedAt ?? '').localeCompare(b.line.barRequestedAt ?? ''));
 
-  const totalDrinks = pending.reduce(
-    (n, x) => n + x.items.reduce((m, line) => m + redeemableOf(line), 0),
-    0,
-  );
-
-  const eventTitle = event?.title;
-
-  return (
-    <Screen scroll padded={false}>
-      <View style={styles.header}>
-        <Text variant="label" tone="accent">
-          Готовить заранее
-        </Text>
-        <Text variant="display">Очередь</Text>
-        <Button label="История выдач" variant="outline" onPress={() => router.push('/history')} />
-        <Text variant="body" tone="muted" style={styles.lead}>
-          {totalDrinks > 0
-            ? `${pluralWithCount(totalDrinks, 'напиток', 'напитка', 'напитков')} ждут выдачи`
-            : 'Невыданных предзаказов нет'}
-        </Text>
-      </View>
-
-      <View style={styles.header}>
-        <Text variant="caption" tone={event ? 'muted' : 'danger'}>
-          {event
-            ? `Смена: ${event.title} · ${formatEventDate(new Date(event.date))}`
-            : 'Ближайшей вечеринки нет'}
-        </Text>
-      </View>
-
-      <View style={styles.list}>
-        {pending.length === 0 ? (
-          <View style={styles.empty}>
-            <Ionicons name="checkmark-done" size={36} color={colors.textFaint} />
-            <Text variant="body" tone="muted" style={styles.center}>
-              {eventTitle ? `По вечеринке ${eventTitle} всё выдано` : 'Выдавать нечего'}
-            </Text>
-          </View>
-        ) : (
-          pending.map(({ order, items, table }) => (
-            <Card key={order.id} style={styles.card}>
-              <View style={styles.cardHead}>
-                <View style={styles.flex}>
-                  <Text variant="bodyStrong">{order.number}</Text>
-                  {order.guest && (
-                    <Text variant="caption" tone="muted">
-                      {order.guest.name}
-                    </Text>
-                  )}
-                  {table && (
-                    <Text variant="caption" tone="accent">
-                      {table.title}
-                    </Text>
-                  )}
-                </View>
-                <Badge
-                  label={pluralWithCount(
-                    items.reduce((n, line) => n + redeemableOf(line), 0),
-                    'позиция',
-                    'позиции',
-                    'позиций',
-                  )}
-                  tone="accent"
-                />
-              </View>
-
-              <View style={styles.items}>
-                {items.map((line) => (
-                  <View key={line.id} style={styles.itemRow}>
-                    <Text variant="body" style={styles.flex} numberOfLines={1}>
-                      {line.title}
-                    </Text>
-                    <View style={styles.qtyPill}>
-                      <Text variant="caption" tone="accent">
-                        {redeemableOf(line)}
-                        {line.redeemed > 0 ? ` из ${line.qty}` : ''}
-                      </Text>
-                    </View>
-                  </View>
-                ))}
-              </View>
-
-              <Text variant="caption" tone="faint">
-                Выдать можно на вкладке «Сканер», отсканировав код гостя
-              </Text>
-            </Card>
-          ))
-        )}
-      </View>
-    </Screen>
-  );
+  return <Screen scroll>
+    <View style={styles.content}>
+      <Text variant="display">Бар</Text>
+      <Text variant="body" tone="muted">{title}</Text>
+      <Button label="История приготовления и выдач" variant="outline" onPress={() => router.push('/history')} />
+      {!canBar && !canRead ? <Text variant="body">Откройте смену в профиле.</Text> : <>
+        <Segmented value={stage} onChange={setStage} options={[
+          { value: 'queued', label: 'Очередь' }, { value: 'preparing', label: 'Готовится' }, { value: 'ready', label: 'Готово' },
+        ]} />
+        <Button label="Обновить" variant="surface" disabled={busy} onPress={() => void refresh()} />
+        {error ? <Text variant="caption" tone="danger">{error}</Text> : null}
+        {!error && rows.length === 0 && <Text variant="body" tone="muted">В этом разделе пока нет позиций.</Text>}
+        {rows.map(({ order, line }) => <Card key={line.id} style={styles.card}>
+          <Text variant="bodyStrong">{order.number} · {order.guest?.name ?? 'Гость'}</Text>
+          <Text variant="subtitle">{line.title}</Text>
+          <Text variant="body" tone="muted">{barProgress(line)}</Text>
+          {line.preparedByName && <Badge label={`Готовит: ${line.preparedByName}`} tone="neutral" />}
+          {stage === 'queued' && canBar && <Button label="Принять в работу" disabled={busy}
+            onPress={() => void act(() => ordersService.prepareBar(order, line.id))} />}
+          {stage === 'preparing' && canBar && line.preparedById === actor?.id && <>
+            <Stepper min={1} max={line.preparingQty ?? 1} value={Math.min(counts[line.id] ?? 1, line.preparingQty ?? 1)} onChange={(qty) => setCounts((prev) => ({ ...prev, [line.id]: qty }))} />
+            <Button label="Отметить готовность" disabled={busy} onPress={() => void act(() => ordersService.readyBar(order, line.id, Math.min(counts[line.id] ?? 1, line.preparingQty ?? 1)))} />
+          </>}
+          {stage === 'ready' && <Text variant="caption" tone="accent">Гость уже видит готовность. Выдайте напитки после сканирования QR.</Text>}
+        </Card>)}
+      </>}
+    </View>
+  </Screen>;
 }
-
-const styles = StyleSheet.create({
-  header: {
-    paddingHorizontal: spacing.lg,
-    gap: spacing.xs,
-    marginBottom: spacing.lg,
-  },
-  lead: {
-    marginTop: spacing.sm,
-  },
-  list: {
-    paddingHorizontal: spacing.lg,
-    marginTop: spacing.lg,
-    gap: spacing.md,
-    paddingBottom: spacing.xxl,
-  },
-  card: {
-    gap: spacing.md,
-  },
-  cardHead: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-  },
-  items: {
-    gap: spacing.sm,
-    backgroundColor: colors.surfaceElevated,
-    borderRadius: radius.md,
-    padding: spacing.lg,
-  },
-  itemRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-  },
-  qtyPill: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: 2,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surface,
-  },
-  empty: {
-    alignItems: 'center',
-    gap: spacing.md,
-    paddingVertical: spacing.xxxl,
-  },
-  center: {
-    textAlign: 'center',
-  },
-  flex: {
-    flex: 1,
-  },
-});
+const styles = StyleSheet.create({ content: { gap: spacing.lg, paddingBottom: spacing.xxl }, card: { gap: spacing.md } });

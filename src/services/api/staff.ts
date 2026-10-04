@@ -160,7 +160,7 @@ function summarize(a: ApiAction): string | undefined {
   const d = a.details;
   if (!d) return undefined;
 
-  if (a.kind === 'bar_issued') return `${d.item} × ${d.qty}`;
+  if (['bar_issued', 'bar_started', 'bar_ready'].includes(a.kind)) return `${d.item} × ${d.qty}${d.preparedBy ? ` · Приготовил: ${d.preparedBy}` : ''}`;
   if (a.kind === 'entry_admitted' || a.kind === 'entry_manual') {
     return `${d.number}: ${d.guests} гостей`;
   }

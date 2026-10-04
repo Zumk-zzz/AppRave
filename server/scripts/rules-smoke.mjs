@@ -208,7 +208,7 @@ check('заранее отменить можно', cancelled.status === 200, `�
 const afterCancel = (await api('/auth/me', { token: guest.token })).body.points;
 check('баллы сняты вместе с отменой', afterCancel === before, `${afterPay} → ${afterCancel}`);
 
-console.log('\n=== Отмена возвращает только невыданное ===');
+console.log('\n=== Неготовый заказ не выдать; отмена возвращает резерв ===');
 const partial = await createEvent(`ЧАСТИЧНО ${uid().slice(0, 5)}`, new Date(Date.now() + 96 * HOUR));
 await topUpStock(api, admin.token, drink.id);
 
@@ -232,15 +232,14 @@ await api('/webhooks/payment', {
   body: { providerId: mixedPay.body.providerId, status: 'succeeded' },
 });
 
-// Бармен выдал одну порцию: её на складе уже нет. Выдавать можно
-// только на смене, поэтому админ открывает её и сразу закрывает
+// Даже админ на смене не может выдать напиток до приготовления.
 await api('/staff/shift/open', { method: 'POST', token: admin.token });
 const issued = await api(`/staff/scan/${mixed.body.number}/issue`, {
   method: 'POST',
   token: admin.token,
   body: { lineId: mixed.body.lines[0].id, qty: 1 },
 });
-check('одна порция выдана', issued.status === 200, `статус ${issued.status}`);
+check('неготовый напиток не выдан', issued.status === 409, `статус ${issued.status}`);
 await api('/staff/shift/close', { method: 'POST', token: admin.token, body: {} });
 
 const cancelMixed = await api(`/orders/${mixed.body.id}/cancel`, {
@@ -253,15 +252,15 @@ const stockAfter = (await api('/stock', { token: admin.token })).body.find(
   (s) => s.barItemId === drink.id,
 ).qty;
 check(
-  'выпитое не вернулось на склад',
-  stockAfter === stockBefore - 1,
-  `было ${stockBefore}, куплено 3, выдана 1, стало ${stockAfter}`,
+  'невыданный резерв вернулся на склад',
+  stockAfter === stockBefore,
+  `было ${stockBefore}, куплено 3, выдано 0, стало ${stockAfter}`,
 );
 
 const closedOrder = (await api(`/orders/${mixed.body.id}`, { token: guest.token })).body;
 check(
   'в строке видно, что вернулось',
-  closedOrder.lines[0].redeemed === 1 && closedOrder.lines[0].cancelledQty === 2,
+  closedOrder.lines[0].redeemed === 0 && closedOrder.lines[0].cancelledQty === 3,
   JSON.stringify(closedOrder.lines[0]),
 );
 

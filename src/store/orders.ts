@@ -35,8 +35,9 @@ interface OrdersState {
 
   /** Заказ по номеру из QR. Для сканера: чужого заказа в кэше нет. */
   byNumber: (number: string) => Promise<Order | null>;
-  /** Отметить проход: гасит все билетные строки разом. */
-  admit: (order: Order, manual?: boolean) => Promise<Order>;
+  refreshOne: (id: string) => Promise<void>;
+  /** Отметить выбранное число проходов по основному или личному QR. */
+  admit: (order: Order, manual?: boolean, qty?: number, ownerPresent?: boolean) => Promise<Order>;
   /** Выдать единицы позиции бара. */
   issue: (order: Order, lineId: string, count: number) => Promise<Order>;
 
@@ -45,6 +46,7 @@ interface OrdersState {
 }
 
 export const useOrdersStore = create<OrdersState>((set, get) => ({
+  async refreshOne(id) { merge(set, get, await ordersService.byId(id)); },
   orders: [],
   staffOrders: [],
   loaded: false,
@@ -95,10 +97,7 @@ export const useOrdersStore = create<OrdersState>((set, get) => ({
   },
 
   async byNumber(number) {
-    // Свои заказы уже загружены — лишний запрос за ними не нужен
-    const known = get().orders.find((o) => o.number === number);
-    if (known) return known;
-
+    // Сканер всегда получает свежую модель с серверными ограничениями роли.
     return ordersService.byNumber(number);
   },
 
@@ -106,8 +105,8 @@ export const useOrdersStore = create<OrdersState>((set, get) => ({
     set({ orders: [], staffOrders: [], loaded: false });
   },
 
-  async admit(order, manual) {
-    const fresh = await ordersService.admit(order, manual);
+  async admit(order, manual, qty, ownerPresent) {
+    const fresh = await ordersService.admit(order, manual, qty, ownerPresent);
     set({ staffOrders: get().staffOrders.map((o) => o.id === fresh.id ? fresh : o) });
     return fresh;
   },

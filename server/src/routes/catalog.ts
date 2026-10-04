@@ -89,6 +89,7 @@ export async function catalogRoutes(app: FastifyInstance) {
       label: t.label,
       zone: t.zone,
       seats: t.seats,
+      includedEntries: t.includedEntries,
       depositKopecks: t.depositKopecks,
       blocked: t.blocked,
       // Снятый администратором стол занят на любую дату

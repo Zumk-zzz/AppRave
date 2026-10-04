@@ -67,13 +67,14 @@ const tableSchema = z.object({
   label: z.string().min(1),
   zone: z.enum(['vip', 'lounge', 'bar']),
   seats: z.number().int().min(1).max(30),
+  includedEntries: z.number().int().min(0).max(30).default(0),
   depositKopecks: z.number().int().min(0),
   blocked: z.boolean().default(false),
   x: z.number().min(0).max(1),
   y: z.number().min(0).max(1),
   w: z.number().min(0).max(1),
   h: z.number().min(0).max(1),
-});
+}).refine((t) => t.includedEntries <= t.seats, 'Проходов не может быть больше мест');
 
 export async function adminRoutes(app: FastifyInstance) {
   // --- Афиша ---
@@ -349,6 +350,7 @@ export async function adminRoutes(app: FastifyInstance) {
       label: t.label,
       zone: t.zone,
       seats: t.seats,
+      includedEntries: t.includedEntries,
       depositKopecks: t.depositKopecks,
       blocked: t.blocked,
       x: t.x,

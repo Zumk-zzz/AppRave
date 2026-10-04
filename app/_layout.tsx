@@ -157,6 +157,7 @@ export default function RootLayout() {
         <Stack.Protected guard={canManage}>
           <Stack.Screen name="admin" options={{ animation: 'slide_from_right' }} />
         </Stack.Protected>
+        <Stack.Screen name="invite" options={{ animation: 'slide_from_right' }} />
       </Stack>
     </SafeAreaProvider>
   );

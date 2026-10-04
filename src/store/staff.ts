@@ -119,6 +119,8 @@ export const useStaffStore = create<StaffState>((set, get) => ({
 }));
 
 export const ACTION_LABEL: Record<StaffActionKind, string> = {
+  bar_started: 'Приготовление начато',
+  bar_ready: 'Напитки готовы',
   entry_admitted: 'Пропуск по коду',
   entry_manual: 'Пропуск без кода',
   bar_issued: 'Выдача напитка',

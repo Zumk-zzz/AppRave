@@ -47,6 +47,8 @@ model User {
   orders       Order[]
   staffActions StaffAction[] @relation("StaffActions")
   shifts       Shift[]
+  invitations EntryInvitation[]
+  visits Visit[]
 
   @@map("users")
 }
@@ -84,6 +86,7 @@ model Event {
   ticketTypes TicketType[]
   orders      Order[]
   bookings    TableBooking[]
+  visits Visit[]
 
   @@index([status, startsAt])
   @@map("events")
@@ -119,6 +122,7 @@ model ClubTable {
   label          String    @unique
   zone           TableZone
   seats          Int
+  includedEntries Int @default(0) @map("included_entries")
   depositKopecks Int       @map("deposit_kopecks")
   // Снят с продажи администратором: ремонт или служебная бронь
   blocked        Boolean   @default(false)
@@ -250,6 +254,7 @@ model Order {
   lines    OrderLine[]
   payments Payment[]
   bookings TableBooking[]
+  invitations EntryInvitation[]
 
   @@index([userId, createdAt])
   @@index([status, expiresAt])
@@ -281,10 +286,19 @@ model OrderLine {
   redeemed     Int      @default(0)
   /// Сколько единиц отменено гостем до выдачи
   cancelledQty Int      @default(0) @map("cancelled_qty")
+  entryIncluded Int @default(0) @map("entry_included")
+  entryRedeemed Int @default(0) @map("entry_redeemed")
+  entryReserved Int @default(0) @map("entry_reserved")
+  barRequestedAt DateTime? @map("bar_requested_at")
+  preparingQty Int @default(0) @map("preparing_qty")
+  readyQty Int @default(0) @map("ready_qty")
+  preparedById String? @map("prepared_by_id")
+  preparedByName String? @map("prepared_by_name")
 
   order      Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
   ticketType TicketType? @relation(fields: [ticketTypeId], references: [id], onDelete: SetNull)
   barItem    BarItem?    @relation(fields: [barItemId], references: [id], onDelete: SetNull)
+  invitations EntryInvitation[]
 
   @@index([orderId])
   @@map("order_lines")
@@ -329,6 +343,8 @@ model IdempotencyKey {
 }
 
 enum StaffActionKind {
+  bar_started
+  bar_ready
   entry_admitted
   entry_manual
   bar_issued
@@ -340,6 +356,33 @@ enum StaffActionKind {
   /// Возврат денег за отменённую вечеринку: единственное действие,
   /// которое двигает деньги в обратную сторону
   refund_issued
+}
+
+model EntryInvitation {
+  id String @id @default(uuid())
+  token String @unique
+  orderId String @map("order_id")
+  lineId String @map("line_id")
+  name String
+  claimedById String? @map("claimed_by_id")
+  admittedAt DateTime? @map("admitted_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  line OrderLine @relation(fields: [lineId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  claimedBy User? @relation(fields: [claimedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  @@index([orderId])
+  @@map("entry_invitations")
+}
+
+model Visit {
+  userId String @map("user_id")
+  eventId String @map("event_id")
+  enteredAt DateTime @default(now()) @map("entered_at")
+  user User @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  event Event @relation(fields: [eventId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  @@id([userId, eventId])
+  @@map("visits")
 }
 
 /// Журнал действий персонала.

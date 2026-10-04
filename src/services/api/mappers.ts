@@ -99,6 +99,7 @@ interface ApiTable {
   label: string;
   zone: ClubTable['zone'];
   seats: number;
+  includedEntries?: number;
   depositKopecks: number;
   blocked: boolean;
   taken: boolean;
@@ -114,6 +115,7 @@ export function mapTable(t: ApiTable): ClubTable {
     label: t.label,
     zone: t.zone,
     seats: t.seats,
+    includedEntries: t.includedEntries ?? 0,
     deposit: toRubles(t.depositKopecks),
     blocked: t.blocked,
     taken: t.taken,
@@ -164,9 +166,18 @@ interface ApiOrderLine {
   redeemed: number;
   cancelledQty: number;
   guests?: string[];
+  entryIncluded?: number;
+  entryRedeemed?: number;
+  entryReserved?: number;
+  barRequestedAt?: string | null;
+  preparingQty?: number;
+  readyQty?: number;
+  preparedById?: string | null;
+  preparedByName?: string | null;
 }
 
 interface ApiOrder {
+  invitationToken?: string;
   id: string;
   number: string;
   status: 'draft' | 'pending' | 'paid' | 'expired' | 'cancelled' | 'refunded' | 'used';
@@ -209,6 +220,7 @@ export function mapOrder(o: ApiOrder): Order {
     pointsEarned: o.pointsEarned,
     status: STATUS[o.status],
     qrPayload: o.qrPayload,
+    invitationToken: o.invitationToken,
     guest: o.guest ? { name: o.guest.name, contact: o.guest.contact ?? undefined } : undefined,
   };
 }
@@ -225,6 +237,14 @@ function mapOrderLine(l: ApiOrderLine): OrderLine {
     redeemed: l.redeemed,
     cancelled: l.cancelledQty,
     guests: l.guests,
+    entryIncluded: l.entryIncluded ?? 0,
+    entryRedeemed: l.entryRedeemed ?? 0,
+    entryReserved: l.entryReserved ?? 0,
+    barRequestedAt: l.barRequestedAt ?? undefined,
+    preparingQty: l.preparingQty ?? 0,
+    readyQty: l.readyQty ?? 0,
+    preparedById: l.preparedById ?? undefined,
+    preparedByName: l.preparedByName ?? undefined,
   };
 }
 
@@ -233,6 +253,7 @@ interface ApiTableLayout {
   label: string;
   zone: ClubTable['zone'];
   seats: number;
+  includedEntries?: number;
   depositKopecks: number;
   blocked: boolean;
   x: number;
@@ -248,6 +269,7 @@ export function mapTableLayout(t: ApiTableLayout): TableLayout {
     label: t.label,
     zone: t.zone,
     seats: t.seats,
+    includedEntries: t.includedEntries ?? 0,
     deposit: toRubles(t.depositKopecks),
     blocked: t.blocked,
     x: t.x,

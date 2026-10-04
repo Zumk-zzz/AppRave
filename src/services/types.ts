@@ -128,6 +128,14 @@ export interface OrderLine {
   redeemed: number;
   /** Сколько единиц отменено гостем до выдачи */
   cancelled?: number;
+  entryIncluded?: number;
+  entryRedeemed?: number;
+  entryReserved?: number;
+  barRequestedAt?: string;
+  preparingQty?: number;
+  readyQty?: number;
+  preparedById?: string;
+  preparedByName?: string;
 }
 
 export interface Order {
@@ -145,6 +153,7 @@ export interface Order {
   status: OrderStatus;
   /** Содержимое QR-кода — то, что сканируют на входе */
   qrPayload: string;
+  invitationToken?: string;
   /**
    * Кто купил. Заполняется только в списках для персонала: гостю в своём
    * заказе это поле не нужно, а показывать чужие контакты всем подряд —
@@ -173,6 +182,15 @@ export interface CheckoutItem {
  * и повторять эту логику на телефоне нельзя — копии разойдутся.
  */
 export interface OrdersService {
+  byId(id: string): Promise<Order>;
+  requestBar(id: string): Promise<Order>;
+  prepareBar(order: Order, lineId: string): Promise<Order>;
+  readyBar(order: Order, lineId: string, qty: number): Promise<Order>;
+  invitations(orderId: string): Promise<EntryInvitation[]>;
+  createInvitation(orderId: string, name: string, requestId: string): Promise<EntryInvitation>;
+  revokeInvitation(token: string): Promise<void>;
+  invitation(token: string): Promise<InvitationPreview>;
+  claimInvitation(token: string): Promise<{ qrPayload: string }>;
   /** Мои заказы, новые первыми. */
   mine(): Promise<Order[]>;
   /**
@@ -191,7 +209,7 @@ export interface OrdersService {
    * `manual` — пропуск без кода, когда у гостя сел телефон. В журнале
    * такие отмечаются отдельно: это не то же самое, что проход по QR.
    */
-  admit(order: Order, manual?: boolean): Promise<Order>;
+  admit(order: Order, manual?: boolean, qty?: number, ownerPresent?: boolean): Promise<Order>;
   /** Выдать напитки по одной позиции, возможно частично. */
   issue(order: Order, lineId: string, count: number): Promise<Order>;
   /** Заказы смены: список на входе, очередь бара, сводка администратора. */
@@ -225,6 +243,7 @@ export interface ClubTable {
   label: string;
   zone: TableZone;
   seats: number;
+  includedEntries?: number;
   /** Минимальный депозит; полностью идёт в счёт заказа */
   deposit: number;
   /** Занят на конкретную дату — вычисляется, в каталоге не хранится */
@@ -371,6 +390,8 @@ export interface RefundResult {
 // --- Смена, журнал, сотрудники, стоп-лист ---
 
 export type StaffActionKind =
+  | 'bar_started'
+  | 'bar_ready'
   | 'entry_admitted'
   | 'entry_manual'
   | 'bar_issued'
@@ -379,6 +400,24 @@ export type StaffActionKind =
   | 'role_granted'
   | 'role_revoked'
   | 'stock_adjusted';
+
+export interface EntryInvitation {
+  id: string;
+  token: string;
+  name: string;
+  orderId: string;
+  lineId: string;
+  claimedById?: string | null;
+  admittedAt?: string | null;
+  revokedAt?: string | null;
+}
+
+export interface InvitationPreview {
+  name: string;
+  eventTitle?: string;
+  eventDate?: string;
+  status: 'available' | 'claimed' | 'used' | 'revoked';
+}
 
 /**
  * Запись журнала.

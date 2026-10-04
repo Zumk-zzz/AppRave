@@ -107,9 +107,9 @@ export const mockStaffService: StaffService = {
     const all = actor.staffRole === 'admin' || actor.staffRole === 'manager';
     const rows = (await read<StaffAction>(ACTIONS_KEY)).filter((a) =>
       (all || a.actorId === actor.id) && (!orderId || a.orderId === orderId) &&
-      (actor.staffRole === 'bartender' ? a.kind === 'bar_issued' :
+      (actor.staffRole === 'bartender' ? ['bar_issued', 'bar_started', 'bar_ready'].includes(a.kind) :
         actor.staffRole === 'doorman' ? ['entry_admitted', 'entry_manual'].includes(a.kind) :
-          ['bar_issued', 'entry_admitted', 'entry_manual'].includes(a.kind)),
+          ['bar_issued', 'bar_started', 'bar_ready', 'entry_admitted', 'entry_manual'].includes(a.kind)),
     );
     const start = cursor ? rows.findIndex((a) => a.id === cursor) + 1 : 0;
     const items = rows.slice(start, start + 50);

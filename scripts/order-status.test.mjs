@@ -116,6 +116,13 @@ check(
 );
 
 console.log('\n=== Состояния оплаты ===');
+const groupTable = (over = {}) => line({ kind: 'table', qty: 1, entryIncluded: 4, entryRedeemed: 0, ...over });
+check('стол с входом ждёт компанию', deriveStatus(order([groupTable()])) === 'paid');
+check('прошла часть компании — заказ открыт', deriveStatus(order([groupTable({ entryRedeemed: 2 })])) === 'paid');
+check('резерв приглашения не считается проходом', deriveStatus(order([groupTable({ entryRedeemed: 3, entryReserved: 1 })])) === 'paid');
+check('вся компания зашла — стол использован', deriveStatus(order([groupTable({ entryRedeemed: 4 })])) === 'used');
+check('напитки готовы, но не выданы — заказ открыт', deriveStatus(order([groupTable({ entryRedeemed: 4 }), line({ readyQty: 3 })])) === 'paid');
+check('отмена включённого входа закрывает заказ', deriveStatus(order([groupTable({ cancelled: 1 })])) === 'cancelled');
 // Эти статусы назначает оплата, а не выдача: вывести их из строк нельзя,
 // и попытка вывести превратила бы неоплаченный заказ в оплаченный
 check('резерв остаётся резервом', deriveStatus(order([ticket()], 'pending')) === 'pending');

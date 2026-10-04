@@ -1,5 +1,6 @@
 import type { Order, OrderLine } from '@/src/services';
 import { redeemableOf } from '@/src/store/orders';
+import { entryTotal, entryAvailable } from './fulfillment';
 
 /** Префикс в QR — отсекает посторонние коды до поиска по базе. */
 const PREFIX = 'APPRAVE';
@@ -18,6 +19,7 @@ export interface ParsedTicket {
  * что угодно, от штрихкода с бутылки до чужого проездного.
  */
 export function parseQrPayload(raw: string): ParsedTicket | null {
+  if (/^APPRAVE-INV\|[a-f0-9]{64}$/.test(raw)) return { number: `invite:${raw.split('|')[1]}`, holder: '', eventId: '' };
   const parts = raw.split('|');
   if (parts.length !== 4 || parts[0] !== PREFIX) return null;
 
@@ -44,6 +46,7 @@ export interface BarPosition {
   qty: number;
   redeemed: number;
   left: number;
+  ready: number;
 }
 
 export interface ScanSummary {
@@ -87,7 +90,7 @@ export function judgeOrder(order: Order | null, expectedEventId?: string): ScanS
 
   const summary = describe(order);
 
-  if (order.status === 'cancelled' || order.status === 'expired') {
+  if (order.status === 'cancelled' || order.status === 'expired' || order.status === 'refunded') {
     return { ...summary, verdict: 'cancelled', order };
   }
 
@@ -104,7 +107,6 @@ export function judgeOrder(order: Order | null, expectedEventId?: string): ScanS
 
 /** Раскладывает заказ на вход, бар и стол. */
 export function describe(order: Order): Omit<ScanSummary, 'verdict' | 'order'> {
-  const tickets = order.lines.filter((l) => l.kind === 'ticket');
   const tableLine = order.lines.find((l) => l.kind === 'table');
 
   const bar: BarPosition[] = order.lines
@@ -116,12 +118,13 @@ export function describe(order: Order): Omit<ScanSummary, 'verdict' | 'order'> {
       qty: line.qty,
       redeemed: line.redeemed,
       left: redeemableOf(line),
+      ready: line.readyQty ?? 0,
     }));
 
   return {
     entry: {
-      total: tickets.reduce((n, l) => n + l.qty, 0),
-      left: tickets.reduce((n, l) => n + redeemableOf(l), 0),
+      total: order.lines.reduce((n, l) => n + entryTotal(l), 0),
+      left: order.lines.reduce((n, l) => n + entryAvailable(l), 0),
     },
     bar,
     table: tableLine ? { title: tableLine.title, guests: tableLine.guests ?? [] } : undefined,
@@ -131,7 +134,7 @@ export function describe(order: Order): Omit<ScanSummary, 'verdict' | 'order'> {
 /** Что показать крупным шрифтом сразу после сканирования. */
 export const VERDICT_TITLE: Record<ScanVerdict, string> = {
   ok: 'Код действителен',
-  'nothing-left': 'Всё уже выдано',
+  'nothing-left': 'Нет доступных позиций',
   cancelled: 'Заказ отменён',
   unpaid: 'Заказ не оплачен',
   'wrong-event': 'Другая вечеринка',
@@ -141,7 +144,7 @@ export const VERDICT_TITLE: Record<ScanVerdict, string> = {
 
 export const VERDICT_HINT: Record<ScanVerdict, string> = {
   ok: 'Отметьте, что именно выдали',
-  'nothing-left': 'По этому заказу проход отмечен и напитки выданы',
+  'nothing-left': 'По этому QR для вашей роли ничего не осталось. Проходы по приглашениям проверяются по личным кодам друзей.',
   cancelled: 'Заказ вернули, обслуживать по нему нечего',
   unpaid: 'Бронь есть, оплата не прошла — пусть оплатит в приложении',
   'wrong-event': 'Код настоящий, но оформлен на другую дату',

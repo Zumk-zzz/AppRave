@@ -166,6 +166,9 @@ export default function TablesTab() {
                       </View>
                     </View>
 
+                    <Text variant="body" tone="accent">
+                      {(selected.includedEntries ?? 0) > 0 ? `Включено проходов: ${selected.includedEntries}` : 'Вход не включён — билеты покупаются отдельно'}
+                    </Text>
                     <Text variant="caption" tone="muted" style={styles.depositNote}>
                       Депозит целиком идёт в счёт заказа — это не плата за сам стол.
                     </Text>

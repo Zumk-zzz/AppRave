@@ -69,6 +69,9 @@ try {
   assert.equal(admissions.filter((r) => r.status === 200).length, 1);
   assert.equal(admissions.filter((r) => r.status === 409).length, 1);
   assert.ok(admissions.find((r) => r.status === 200).body.order.lines.every((l) => l.kind === 'ticket'));
+  assert.equal((await api(`/orders/${mixed.id}/bar/request`, guest.token, {})).status, 200);
+  assert.equal((await api(`/staff/bar/${b.bar[0].lineId}/prepare`, bar1.token, {})).status, 200);
+  assert.equal((await api(`/staff/bar/${b.bar[0].lineId}/ready`, bar1.token, { qty: 3, expectedPreparing: 3 })).status, 200);
   const races = await Promise.all([bar1, bar2].map((u) => api(`${path}/issue`, u.token, { lineId: b.bar[0].lineId, qty: 2 })));
   assert.equal(races.filter((r) => r.status === 200).length, 1);
   assert.equal(races.filter((r) => r.status === 400).length, 1);
@@ -81,7 +84,7 @@ try {
 
   const historyPath = `/staff/fulfillments?orderId=${mixed.id}`;
   const team = (await api(historyPath, admin.token)).body.items;
-  assert.equal(team.length, 3);
+  assert.equal(team.length, 5);
   const drinks = team.filter((a) => a.kind === 'bar_issued');
   assert.equal(drinks.reduce((n, a) => n + a.details.qty, 0), 3);
   assert.ok(drinks.some((a) => a.actor.id === winner.user.id && a.details.qty === 2));
@@ -89,7 +92,7 @@ try {
   assert.ok(team.every((a) => a.actor.name && a.shiftId && a.details.number === mixed.number));
   for (const user of [bar1, bar2, door]) {
     const own = (await api(historyPath, user.token)).body.items;
-    assert.equal(own.length, 1);
+    assert.equal(own.length, user === bar1 ? 3 : 1);
     assert.equal(own[0].actor.id, user.user.id);
   }
   assert.equal((await api(historyPath, guest.token)).status, 403);
@@ -115,7 +118,7 @@ try {
 
   await api('/staff/shift/close', bar1.token, {});
   assert.equal((await api(path, bar1.token)).status, 403);
-  assert.equal((await api(historyPath, bar1.token)).body.items.length, 1);
+  assert.equal((await api(historyPath, bar1.token)).body.items.length, 3);
   console.log('OK: вне смены выдача закрыта, своя история доступна');
 } finally {
   for (const user of workers) await api('/staff/shift/close', user.token, {});

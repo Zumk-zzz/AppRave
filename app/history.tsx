@@ -62,7 +62,7 @@ export default function HistoryScreen() {
         {items.map((item) => <Card key={item.id} style={styles.card}>
           <View style={styles.heading}>
             <Text variant="bodyStrong" style={styles.flex}>{item.orderNumber ?? 'Заказ'}</Text>
-            <Badge label={item.kind === 'bar_issued' ? 'Напитки выданы' : 'Вход подтверждён'} tone="success" />
+            <Badge label={item.kind === 'bar_issued' ? 'Выдано' : item.kind === 'bar_started' ? 'Готовится' : item.kind === 'bar_ready' ? 'Готово' : 'Вход'} tone="success" />
           </View>
           <Text variant="body">{item.summary ?? 'Подтверждение выполнено'}</Text>
           <Text variant="bodyStrong">Выполнил: {item.actorName}</Text>

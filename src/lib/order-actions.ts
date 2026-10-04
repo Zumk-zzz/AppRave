@@ -31,5 +31,5 @@ export const ORDER_STATUS_TONE: Record<OrderStatus, BadgeTone> = {
 
 /** Можно ли ещё отменить эту строку. */
 export function isLineCancellable(order: Order, line: OrderLine): boolean {
-  return (order.status === 'paid' || order.status === 'pending') && redeemableOf(line) > 0;
+  return (order.status === 'paid' || order.status === 'pending') && !line.barRequestedAt && !(line.entryRedeemed ?? 0) && redeemableOf(line) > 0;
 }

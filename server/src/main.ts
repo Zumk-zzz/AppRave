@@ -14,6 +14,7 @@ import { orderRoutes } from './routes/orders.js';
 import { paymentRoutes } from './routes/payments.js';
 import { refundRoutes } from './routes/refunds.js';
 import { staffRoutes } from './routes/staff.js';
+import { fulfillmentRoutes } from './routes/fulfillment.js';
 
 const app = Fastify({
   logger: isProd
@@ -87,6 +88,7 @@ await app.register(orderRoutes);
 await app.register(paymentRoutes);
 await app.register(refundRoutes);
 await app.register(staffRoutes);
+await app.register(fulfillmentRoutes);
 
 if (env.PUBLIC_ACCESS) {
   // Старые коды, выданные до открытия наружу, знает кто угодно:
