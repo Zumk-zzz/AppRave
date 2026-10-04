@@ -5,6 +5,7 @@ import { requirePermission, requireUser } from '../auth/guard.js';
 import { db } from '../db.js';
 import { conflict, forbidden, notFound } from '../lib/http-error.js';
 import { entryLeft, ensureServing, recordVisit } from '../lib/fulfillment.js';
+import { lockShift, arrival, activity } from '../lib/operations.js';
 import { isLive } from '../lib/events.js';
 import { loadOrder, settleStatus } from './orders.js';
 
@@ -23,6 +24,7 @@ export async function fulfillmentRoutes(app: FastifyInstance) {
       for (const line of order.lines) {
         if (line.kind === 'bar' && !line.barRequestedAt && line.qty > line.redeemed + line.cancelledQty) {
           await tx.orderLine.update({ where: { id: line.id }, data: { barRequestedAt: new Date() } });
+          await activity(tx, order.id, 'bar_requested', `${line.title} × ${line.qty - line.redeemed - line.cancelledQty}: передано в бар`);
         }
       }
     });
@@ -35,6 +37,7 @@ export async function fulfillmentRoutes(app: FastifyInstance) {
     const initial = await db.orderLine.findUnique({ where: { id: lineId } });
     if (!initial) throw notFound('Позиция не найдена');
     await db.$transaction(async (tx) => {
+      await lockShift(tx, auth);
       await tx.$queryRaw`SELECT id FROM orders WHERE id = ${initial.orderId} FOR UPDATE`;
       const line = await tx.orderLine.findUniqueOrThrow({ where: { id: lineId }, include: { order: { include: { event: true } } } });
       ensureServing(line.order.event);
@@ -46,7 +49,7 @@ export async function fulfillmentRoutes(app: FastifyInstance) {
       const qty = line.qty - line.cancelledQty - line.redeemed;
       if (qty <= 0) throw conflict('Выдавать нечего', 'nothing_left');
       const actor = await tx.user.findUniqueOrThrow({ where: { id: auth.sub } });
-      await tx.orderLine.update({ where: { id: lineId }, data: { preparingQty: qty, preparedById: auth.sub, preparedByName: actor.name } });
+      await tx.orderLine.update({ where: { id: lineId }, data: { preparingQty: qty, preparingStartedAt: new Date(), preparedById: auth.sub, preparedByName: actor.name } });
       await tx.staffAction.create({ data: { actorId: auth.sub, shiftId: auth.shiftId, orderId: line.orderId,
         kind: 'bar_started', details: { number: line.order.number, lineId, item: line.title, qty } } });
     });
@@ -60,6 +63,7 @@ export async function fulfillmentRoutes(app: FastifyInstance) {
     const initial = await db.orderLine.findUnique({ where: { id: lineId } });
     if (!initial) throw notFound('Позиция не найдена');
     await db.$transaction(async (tx) => {
+      await lockShift(tx, auth);
       await tx.$queryRaw`SELECT id FROM orders WHERE id = ${initial.orderId} FOR UPDATE`;
       const line = await tx.orderLine.findUniqueOrThrow({ where: { id: lineId }, include: { order: { include: { event: true } } } });
       ensureServing(line.order.event);
@@ -67,7 +71,7 @@ export async function fulfillmentRoutes(app: FastifyInstance) {
       if (line.order.status !== 'paid' || line.preparingQty !== expectedPreparing || qty > line.preparingQty) {
         throw conflict('Состояние изменилось — обновите очередь', 'stale_preparation');
       }
-      await tx.orderLine.update({ where: { id: lineId }, data: { preparingQty: { decrement: qty }, readyQty: { increment: qty } } });
+      await tx.orderLine.update({ where: { id: lineId }, data: { preparingQty: { decrement: qty }, readyQty: { increment: qty }, barReadyAt: new Date() } });
       await tx.staffAction.create({ data: { actorId: auth.sub, shiftId: auth.shiftId, orderId: line.orderId,
         kind: 'bar_ready', details: { number: line.order.number, lineId, item: line.title, qty } } });
     });
@@ -145,6 +149,7 @@ export async function fulfillmentRoutes(app: FastifyInstance) {
       ensureServing(order.event);
       if (fresh.revokedAt || fresh.admittedAt || !['paid', 'used'].includes(order.status)) throw conflict('Приглашение недействительно', 'invite_inactive');
       if (fresh.claimedById && fresh.claimedById !== auth.sub) throw conflict('Приглашение уже принято другим гостем', 'invite_claimed');
+      if (!fresh.claimedById) { const guest = await tx.user.findUniqueOrThrow({ where: { id: auth.sub } }); await activity(tx, order.id, 'invitation_claimed', `Приглашение принято: ${fresh.name}`, guest.name); }
       await tx.entryInvitation.update({ where: { token }, data: { claimedById: auth.sub } });
     });
     return { qrPayload: `APPRAVE-INV|${token}` };
@@ -172,6 +177,7 @@ export async function fulfillmentRoutes(app: FastifyInstance) {
     const invite = await db.entryInvitation.findUnique({ where: { token } });
     if (!invite) throw notFound('Приглашение не найдено');
     await db.$transaction(async (tx) => {
+      await lockShift(tx, auth);
       await tx.$queryRaw`SELECT id FROM orders WHERE id = ${invite.orderId} FOR UPDATE`;
       const fresh = await tx.entryInvitation.findUniqueOrThrow({ where: { token } });
       const order = await tx.order.findUniqueOrThrow({ where: { id: invite.orderId }, include: { event: true } });
@@ -187,6 +193,7 @@ export async function fulfillmentRoutes(app: FastifyInstance) {
         ...(line.kind === 'ticket' ? { redeemed: { increment: 1 } } : { entryRedeemed: { increment: 1 } }) } });
       await tx.entryInvitation.update({ where: { token }, data: { admittedAt: new Date() } });
       await recordVisit(tx, fresh.claimedById, order.eventId!);
+      await arrival(tx, order.id);
       await settleStatus(tx, order.id);
       await tx.staffAction.create({ data: { actorId: auth.sub, shiftId: auth.shiftId, orderId: order.id, kind: 'entry_admitted', details: { number: order.number, guests: 1, invitation: invite.id, guest: guest.name } } });
     });

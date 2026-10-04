@@ -159,7 +159,7 @@ async function refundOrder(orderId: string): Promise<number | null> {
 
     await tx.tableBooking.updateMany({
       where: { orderId: order.id, status: { in: ['pending', 'paid'] } },
-      data: { status: 'cancelled' },
+      data: { status: 'cancelled', depositRemainingKopecks: 0 },
     });
 
     // Платёж помечается так же, как это сделал бы настоящий шлюз:

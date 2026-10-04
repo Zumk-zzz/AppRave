@@ -25,7 +25,7 @@ export function canCancel(order: Order): CancelCheck {
   if (order.status !== 'paid' && order.status !== 'pending') {
     return { allowed: false, reason: 'status' };
   }
-  if (order.lines.some((line) => line.barRequestedAt || (line.entryRedeemed ?? 0) > 0)) {
+  if (order.depositCommitted || order.lines.some((line) => line.barRequestedAt || (line.entryRedeemed ?? 0) > 0)) {
     return { allowed: false, reason: 'serving' };
   }
   if (!order.eventDate) return { allowed: true };
@@ -39,7 +39,7 @@ export function canCancel(order: Order): CancelCheck {
 
 export const CANCEL_BLOCK_TEXT: Record<CancelBlockReason, string> = {
   status: 'Этот заказ уже нельзя отменить',
-  serving: 'Заказ уже обслуживается: напитки переданы в бар или использован вход по столу',
+  serving: 'Заказ уже обслуживается: напитки переданы в бар, использован вход по столу или часть депозита',
   'too-late': `Отмена закрывается за ${REFUND_CUTOFF_HOURS} часа до начала`,
   past: 'Вечеринка уже прошла',
 };

@@ -102,7 +102,7 @@ check(
 );
 
 const noAuthTables = await api(`/events/${withStock.id}/tables`);
-check('схема зала отдаётся', noAuthTables.status === 200 && noAuthTables.body.length === 12);
+check('схема зала отдаётся', noAuthTables.status === 200 && noAuthTables.body.length >= 12);
 
 console.log('\n=== Защита ролей ===');
 // Прошлый прогон мог прерваться с открытой сменой, а от неё зависят

@@ -6,7 +6,8 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
 
-import { Badge, Button, Card, Field, Screen, SectionHeader, Sheet, Text } from '@/src/components';
+import { Badge, Button, Card, Screen, SectionHeader, Text } from '@/src/components';
+import { staffService, type Shift } from '@/src/services';
 import { ROLE_LABEL } from '@/src/lib/permissions';
 import { pluralWithCount } from '@/src/lib/format';
 import { useAuthStore, useCan, useRole } from '@/src/store/auth';
@@ -28,17 +29,16 @@ export default function ShiftScreen() {
   const team = useStaffStore((s) => s.team);
   const actions = useStaffStore((s) => s.actions);
   const openShift = useStaffStore((s) => s.openShift);
-  const closeShift = useStaffStore((s) => s.closeShift);
   const loadStaff = useStaffStore((s) => s.load);
 
-  const [closing, setClosing] = useState(false);
-  const [note, setNote] = useState('');
+  const [mine, setMine] = useState<Shift[]>([]);
 
   // Журнал перечитывается при каждом открытии: смена идёт прямо сейчас,
   // и вчерашний список в ней бесполезен
   useFocusEffect(
     useCallback(() => {
       void loadStaff(user);
+      void staffService.myShifts().then(setMine).catch(() => setMine([]));
     }, [loadStaff, user]),
   );
 
@@ -55,7 +55,7 @@ export default function ShiftScreen() {
    */
   const visibleActions = useMemo(() => actions.slice(0, 100), [actions]);
 
-  const shiftActions = current ? actions.filter((a) => a.shiftId === current.id) : [];
+  const shiftActions = useMemo(() => current ? actions.filter((a) => a.shiftId === current.id) : [], [current, actions]);
 
   const summary = useMemo(() => {
     const counts = new Map<string, number>();
@@ -71,18 +71,6 @@ export default function ShiftScreen() {
     try {
       // Открытие и закрытие смены записывает в журнал тот, кто их исполняет
       await openShift(user);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch (e) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert('Не получилось', e instanceof Error ? e.message : 'Попробуйте ещё раз');
-    }
-  };
-
-  const handleClose = async () => {
-    try {
-      await closeShift(user, note.trim() || undefined);
-      setClosing(false);
-      setNote('');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -139,7 +127,7 @@ export default function ShiftScreen() {
                 </View>
               )}
 
-              <Button label="Закрыть смену" variant="outline" fullWidth onPress={() => setClosing(true)} />
+              <Button label="Закрыть смену" variant="outline" fullWidth onPress={() => router.push({ pathname: '/shift-report', params: { id: current.id } })} />
             </>
           ) : (
             <>
@@ -171,13 +159,16 @@ export default function ShiftScreen() {
           ) : (
             <View style={styles.log}>
               {team.map((shift) => (
-                <ShiftRow key={shift.id} shift={shift} />
+                <View key={shift.id}><ShiftRow shift={shift} /><Button label="Отчёт смены" variant="ghost" onPress={() => router.push({ pathname: '/shift-report', params: { id: shift.id } })} /></View>
               ))}
             </View>
           )}
         </>
       )}
 
+      <View style={styles.log}>
+        {mine.filter((s) => s.closedAt).map((s) => <Button key={s.id} label={`Отчёт смены ${format(new Date(s.openedAt), 'd MMM, HH:mm', { locale: ru })}`} variant="outline" onPress={() => router.push({ pathname: '/shift-report', params: { id: s.id } })} />)}
+      </View>
       <SectionHeader
         spaced
         title="Журнал"
@@ -196,22 +187,7 @@ export default function ShiftScreen() {
         </View>
       )}
 
-      <Sheet visible={closing} onClose={() => setClosing(false)} title="Закрыть смену">
-        <View style={styles.sheet}>
-          <Text variant="body" tone="muted">
-            За смену: {pluralActions(shiftActions.length)}.
-          </Text>
-          <Field
-            label="Заметка"
-            value={note}
-            onChangeText={setNote}
-            placeholder="Расхождения, происшествия"
-            multiline
-            hint="Необязательно, но помогает разобраться потом"
-          />
-          <Button label="Закрыть смену" size="lg" fullWidth onPress={handleClose} />
-        </View>
-      </Sheet>
+
     </Screen>
   );
 }
@@ -275,19 +251,6 @@ function ActionRow({ action, showActor }: { action: StaffAction; showActor: bool
       {isManual && <Badge label="Вручную" tone="gold" />}
     </Card>
   );
-}
-
-function pluralActions(n: number): string {
-  const forms = ['действие', 'действия', 'действий'];
-  const mod10 = n % 10;
-  const mod100 = n % 100;
-  const form =
-    mod10 === 1 && mod100 !== 11
-      ? forms[0]
-      : mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)
-        ? forms[1]
-        : forms[2];
-  return `${n} ${form}`;
 }
 
 const styles = StyleSheet.create({

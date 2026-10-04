@@ -150,10 +150,19 @@ model TableBooking {
   tableId String        @map("table_id")
   guests  String[]
   status  BookingStatus @default(pending)
+  serviceStatus String @default("reserved") @map("service_status")
+  responsibleId String? @map("responsible_id")
+  responsibleName String? @map("responsible_name")
+  arrivedAt DateTime? @map("arrived_at")
+  occupiedAt DateTime? @map("occupied_at")
+  releasedAt DateTime? @map("released_at")
+  depositInitialKopecks Int @default(0) @map("deposit_initial_kopecks")
+  depositRemainingKopecks Int @default(0) @map("deposit_remaining_kopecks")
 
   order Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
   event Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
   table ClubTable @relation(fields: [tableId], references: [id], onDelete: Restrict)
+  depositOrders Order[] @relation("DepositOrders")
 
   // Двойную бронь запрещает база, а не код приложения.
   // Частичный индекс объявлен вручную в миграции: Prisma не умеет WHERE
@@ -241,6 +250,8 @@ model Order {
   eventId      String?     @map("event_id")
   status       OrderStatus @default(pending)
   totalKopecks Int         @map("total_kopecks")
+  depositBookingId String? @map("deposit_booking_id")
+  depositUsedKopecks Int @default(0) @map("deposit_used_kopecks")
   pointsEarned Int         @default(0) @map("points_earned")
   // До этого момента товар держится за гостем. Позже фоновая задача
   // вернёт его в продажу, а заказ переведёт в expired.
@@ -255,6 +266,8 @@ model Order {
   payments Payment[]
   bookings TableBooking[]
   invitations EntryInvitation[]
+  activities OrderActivity[]
+  depositBooking TableBooking? @relation("DepositOrders", fields: [depositBookingId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([userId, createdAt])
   @@index([status, expiresAt])
@@ -290,6 +303,8 @@ model OrderLine {
   entryRedeemed Int @default(0) @map("entry_redeemed")
   entryReserved Int @default(0) @map("entry_reserved")
   barRequestedAt DateTime? @map("bar_requested_at")
+  preparingStartedAt DateTime? @map("preparing_started_at")
+  barReadyAt DateTime? @map("bar_ready_at")
   preparingQty Int @default(0) @map("preparing_qty")
   readyQty Int @default(0) @map("ready_qty")
   preparedById String? @map("prepared_by_id")
@@ -343,6 +358,9 @@ model IdempotencyKey {
 }
 
 enum StaffActionKind {
+  bar_transferred
+  table_updated
+  deposit_spent
   bar_started
   bar_ready
   entry_admitted
@@ -416,6 +434,7 @@ model Shift {
   closedAt DateTime? @map("closed_at")
   /// Заметка при закрытии: расхождения, происшествия
   note     String?
+  report Json?
 
   user    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   actions StaffAction[]
@@ -467,4 +486,17 @@ model LoginCode {
 
   @@index([destination, createdAt])
   @@map("login_codes")
+}
+
+model OrderActivity {
+  id String @id @default(uuid())
+  orderId String @map("order_id")
+  kind String
+  title String
+  actorName String? @map("actor_name")
+  details Json?
+  createdAt DateTime @default(now()) @map("created_at")
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  @@index([orderId, createdAt])
+  @@map("order_activities")
 }

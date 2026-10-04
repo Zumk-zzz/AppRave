@@ -16,7 +16,7 @@
     "smoke": "node scripts/api-smoke.mjs",
     "smoke:roles": "node scripts/roles-smoke.mjs",
     "smoke:identity": "node scripts/identity-smoke.mjs",
-    "smoke:all": "npm run smoke && npm run smoke:roles && npm run smoke:identity && npm run smoke:orders && npm run smoke:catalog && npm run smoke:refund && npm run smoke:rules && npm run smoke:qr && npm run smoke:fulfillment",
+    "smoke:all": "npm run smoke && npm run smoke:roles && npm run smoke:identity && npm run smoke:orders && npm run smoke:catalog && npm run smoke:refund && npm run smoke:rules && npm run smoke:qr && npm run smoke:fulfillment && npm run smoke:operations",
     "smoke:fulfillment": "node scripts/fulfillment-smoke.mjs",
     "smoke:qr": "node scripts/qr-smoke.mjs",
     "smoke:orders": "node scripts/orders-smoke.mjs",
@@ -25,7 +25,8 @@
     "demo:refresh": "node scripts/refresh-events.mjs",
     "smoke:rules": "node scripts/rules-smoke.mjs",
     "demo:clean": "node scripts/clean-test-events.mjs",
-    "demo:points": "tsx scripts/recalc-points.mjs"
+    "demo:points": "tsx scripts/recalc-points.mjs",
+    "smoke:operations": "node scripts/operations-smoke.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

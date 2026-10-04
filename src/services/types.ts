@@ -132,6 +132,8 @@ export interface OrderLine {
   entryRedeemed?: number;
   entryReserved?: number;
   barRequestedAt?: string;
+  preparingStartedAt?: string;
+  barReadyAt?: string;
   preparingQty?: number;
   readyQty?: number;
   preparedById?: string;
@@ -154,6 +156,8 @@ export interface Order {
   /** Содержимое QR-кода — то, что сканируют на входе */
   qrPayload: string;
   invitationToken?: string;
+  depositUsed?: number;
+  depositCommitted?: boolean;
   /**
    * Кто купил. Заполняется только в списках для персонала: гостю в своём
    * заказе это поле не нужно, а показывать чужие контакты всем подряд —
@@ -182,6 +186,13 @@ export interface CheckoutItem {
  * и повторять эту логику на телефоне нельзя — копии разойдутся.
  */
 export interface OrdersService {
+  barTeam(): Promise<BarWorker[]>;
+  transferBar(order: Order, lineId: string, toUserId: string, reason: string): Promise<void>;
+  floor(eventId: string): Promise<OperationalTable[]>;
+  updateTable(table: OperationalTable, state: TableServiceState, responsibleId?: string): Promise<void>;
+  tableBooking(orderId: string): Promise<OperationalTable | null>;
+  spendDeposit(orderId: string, barItemId: string, qty: number, requestId: string): Promise<Order>;
+  timeline(number: string): Promise<{ order: Order; rows: OrderActivity[] }>;
   byId(id: string): Promise<Order>;
   requestBar(id: string): Promise<Order>;
   prepareBar(order: Order, lineId: string): Promise<Order>;
@@ -213,7 +224,7 @@ export interface OrdersService {
   /** Выдать напитки по одной позиции, возможно частично. */
   issue(order: Order, lineId: string, count: number): Promise<Order>;
   /** Заказы смены: список на входе, очередь бара, сводка администратора. */
-  forStaff(eventId?: string): Promise<Order[]>;
+  forStaff(eventId?: string, queueOnly?: boolean): Promise<Order[]>;
 }
 
 export type BarCategory = 'cocktails' | 'shots' | 'champagne' | 'strong' | 'soft';
@@ -390,6 +401,9 @@ export interface RefundResult {
 // --- Смена, журнал, сотрудники, стоп-лист ---
 
 export type StaffActionKind =
+  | 'bar_transferred'
+  | 'table_updated'
+  | 'deposit_spent'
   | 'bar_started'
   | 'bar_ready'
   | 'entry_admitted'
@@ -402,6 +416,7 @@ export type StaffActionKind =
   | 'stock_adjusted';
 
 export interface EntryInvitation {
+  createdAt?: string;
   id: string;
   token: string;
   name: string;
@@ -486,7 +501,9 @@ export interface StaffService {
   /** Моя открытая смена, если она есть. */
   currentShift(user: User): Promise<Shift | null>;
   openShift(user: User): Promise<Shift>;
-  closeShift(user: User, note?: string): Promise<void>;
+  closeShift(user: User, note?: string, counts?: InventoryCount[]): Promise<void>;
+  myShifts(): Promise<Shift[]>;
+  shiftReport(id: string): Promise<ShiftReport>;
 
   /** Журнал: сотрудник видит свои действия, управляющий — все. */
   actions(limit?: number): Promise<StaffAction[]>;
@@ -550,3 +567,21 @@ export class InvalidCodeError extends Error {
     this.name = 'InvalidCodeError';
   }
 }
+
+export interface BarWorker { id: string; name: string; shiftId: string }
+export type TableServiceState = 'reserved' | 'arrived' | 'occupied' | 'released';
+export interface OperationalTable {
+  id: string; orderId: string; orderNumber: string; tableId: string; label: string;
+  guestName: string; guests: string[]; serviceState: TableServiceState;
+  responsibleId?: string; responsibleName?: string; depositInitial: number; depositRemaining: number;
+}
+export interface InventoryCount { barItemId: string; actual: number; available: number; reserved: number; reason: string }
+export interface ShiftReport {
+  saved: boolean;
+  shiftId: string; staffName: string; openedAt: string; closedAt: string | null; generatedAt: string;
+  admitted: number; started: number; ready: number; issued: number; pendingPreparations: number;
+  soldOrders: number | null; salesKopecks: number | null;
+  items: { title: string; prepared: number; ready: number; issued: number }[];
+  stock: { barItemId: string; title: string; unit: string; available: number; reserved: number; expected: number; actual: number | null; difference: number | null; reason: string }[];
+}
+export interface OrderActivity { id: string; kind: string; title: string; createdAt: string; actorName?: string | null }

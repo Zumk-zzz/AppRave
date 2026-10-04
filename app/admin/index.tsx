@@ -83,6 +83,8 @@ export default function AdminDashboard() {
       )}
 
       <View style={styles.sections}>
+        <Section icon="grid" title="Столики в зале" hint="Гости, обслуживание и остаток депозита" onPress={() => router.push('/admin/floor')} />
+        <Section icon="search" title="Разбор заказа" hint="Полная история по номеру заказа" onPress={() => router.push('/order-audit')} />
         <Section
           icon="flash"
           title="Афиша"

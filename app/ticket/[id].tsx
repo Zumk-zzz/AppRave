@@ -17,7 +17,7 @@ import {
 import type { OrderLine } from '@/src/services';
 import { useAuthStore } from '@/src/store/auth';
 import { redeemableOf, useOrdersStore } from '@/src/store/orders';
-import { colors, fonts, radius, spacing } from '@/src/theme';
+import { colors, fonts, fontSize, radius, spacing } from '@/src/theme';
 
 export default function TicketScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -129,6 +129,7 @@ export default function TicketScreen() {
         </Text>
       )}
 
+      {!!order.depositUsed && <Text variant="body" tone="accent">Оплачено из депозита: {formatPrice(order.depositUsed)}</Text>}
       <FulfillmentPanel order={order} />
       <Card style={styles.details}>
         {ticketLines.length > 0 && (
@@ -351,7 +352,7 @@ const styles = StyleSheet.create({
   },
   orderNo: {
     fontFamily: fonts.display,
-    fontSize: 16,
+    fontSize: fontSize.xxl,
     letterSpacing: 2,
     color: colors.qrForeground,
   },

@@ -46,6 +46,8 @@ interface ApiBan {
 }
 
 export const apiStaffService: StaffService = {
+  myShifts: () => request('/staff/my-shifts'),
+  shiftReport: (id) => request(`/staff/shifts/${id}/report`),
   async currentShift() {
     const shift = await request<ApiShift | null>('/staff/shift');
     return shift ? mapShift(shift) : null;
@@ -55,8 +57,8 @@ export const apiStaffService: StaffService = {
     return mapShift(await request<ApiShift>('/staff/shift/open', { method: 'POST', body: {} }));
   },
 
-  async closeShift(_user, note) {
-    await request('/staff/shift/close', { method: 'POST', body: { note } });
+  async closeShift(_user, note, counts) {
+    await request('/staff/shift/close', { method: 'POST', body: { note, counts } });
   },
 
   async teamShifts(limit = 50) {
@@ -160,6 +162,8 @@ function summarize(a: ApiAction): string | undefined {
   const d = a.details;
   if (!d) return undefined;
 
+  if (a.kind === 'bar_transferred') return `${d.item} × ${d.qty} · ${d.from} → ${d.to} · ${d.reason}`;
+  if (a.kind === 'table_updated') return `Стол: ${d.state} · ${d.responsible ?? 'без ответственного'}`;
   if (['bar_issued', 'bar_started', 'bar_ready'].includes(a.kind)) return `${d.item} × ${d.qty}${d.preparedBy ? ` · Приготовил: ${d.preparedBy}` : ''}`;
   if (a.kind === 'entry_admitted' || a.kind === 'entry_manual') {
     return `${d.number}: ${d.guests} гостей`;

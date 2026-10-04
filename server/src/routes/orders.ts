@@ -8,6 +8,7 @@ import { env } from '../env.js';
 import { isLive } from '../lib/events.js';
 import { badRequest, conflict, notFound } from '../lib/http-error.js';
 import { orderNumber } from '../lib/ids.js';
+import { activity } from '../lib/operations.js';
 import { revokeInvitations } from '../lib/fulfillment.js';
 import { pointsForPurchase, tierForPoints } from '../lib/money.js';
 
@@ -173,6 +174,8 @@ export async function orderRoutes(app: FastifyInstance) {
               tableId: tableToBook.id,
               guests: body.table.guests,
               status: 'pending',
+              depositInitialKopecks: tableToBook.depositKopecks,
+              depositRemainingKopecks: tableToBook.depositKopecks,
             },
           });
         }
@@ -298,8 +301,10 @@ export async function orderRoutes(app: FastifyInstance) {
         throw conflict('Этот заказ уже нельзя менять', 'not_cancellable');
       }
       const currentLine = await tx.orderLine.findUniqueOrThrow({ where: { id: lineId } });
+      if (currentLine.kind === 'table' && await tx.tableBooking.count({ where: { orderId: order.id, depositOrders: { some: {} } } })) throw conflict('Депозит уже использован', 'deposit_used');
       if (currentLine.kind === 'table' && currentLine.entryRedeemed > 0) throw conflict('По брони уже прошли гости', 'entry_used');
       if (currentLine.kind === 'bar' && currentLine.barRequestedAt) throw conflict('Приготовление уже запрошено', 'bar_requested');
+      await activity(tx, order.id, 'line_cancelled', `${currentLine.title}: отменено ${qty}`);
       await revokeInvitations(tx, order.id, lineId);
       const affected = await tx.$executeRaw`
         UPDATE order_lines
@@ -337,7 +342,7 @@ export async function orderRoutes(app: FastifyInstance) {
         // Стол освобождается сразу: частичной брони не бывает
         await tx.tableBooking.updateMany({
           where: { orderId: order.id, tableId: line.tableId, status: { in: ['pending', 'paid'] } },
-          data: { status: 'cancelled' },
+          data: { status: 'cancelled', depositRemainingKopecks: 0 },
         });
       }
 
@@ -382,7 +387,7 @@ async function settleStatus(tx: Prisma.TransactionClient, orderId: string) {
   if (!used) {
     await tx.tableBooking.updateMany({
       where: { orderId: order.id, status: { in: ['pending', 'paid'] } },
-      data: { status: 'cancelled' },
+      data: { status: 'cancelled', depositRemainingKopecks: 0 },
     });
   }
 }
@@ -425,9 +430,11 @@ export async function releaseOrder(orderId: string, status: 'cancelled' | 'expir
     const order = await tx.order.findUnique({ where: { id: orderId }, include: { lines: true } });
     if (!order) return;
     if (order.status !== 'pending' && order.status !== 'paid') return;
+    if (status === 'cancelled' && await tx.tableBooking.count({ where: { orderId: order.id, depositOrders: { some: {} } } })) throw conflict('Депозит уже использован — обратитесь к сотруднику', 'deposit_used');
     if (status === 'cancelled' && order.lines.some((l) => l.entryRedeemed > 0 || l.barRequestedAt)) {
       throw conflict('Заказ уже обслуживается — обратитесь к сотруднику', 'fulfillment_started');
     }
+    await activity(tx, order.id, status, status === 'cancelled' ? 'Заказ отменён' : 'Резерв истёк');
     await revokeInvitations(tx, order.id);
 
     for (const line of order.lines) {
@@ -470,7 +477,7 @@ export async function releaseOrder(orderId: string, status: 'cancelled' | 'expir
 
     await tx.tableBooking.updateMany({
       where: { orderId: order.id, status: { in: ['pending', 'paid'] } },
-      data: { status: status === 'expired' ? 'expired' : 'cancelled' },
+      data: { status: status === 'expired' ? 'expired' : 'cancelled', depositRemainingKopecks: 0 },
     });
 
     await tx.order.update({ where: { id: order.id }, data: { status, expiresAt: null } });
@@ -531,6 +538,8 @@ export function toLineDtos(order: OrderRow) {
     entryRedeemed: l.entryRedeemed,
     entryReserved: l.entryReserved,
     barRequestedAt: l.barRequestedAt?.toISOString() ?? null,
+    preparingStartedAt: l.preparingStartedAt?.toISOString() ?? null,
+    barReadyAt: l.barReadyAt?.toISOString() ?? null,
     preparingQty: l.preparingQty,
     readyQty: l.readyQty,
     preparedById: l.preparedById,
@@ -550,6 +559,9 @@ export function toOrderDto(order: OrderRow) {
     status: order.status,
     totalKopecks: order.totalKopecks,
     pointsEarned: order.pointsEarned,
+    depositUsedKopecks: order.depositUsedKopecks,
+    depositCommitted: order.bookings.some((b) => b.depositRemainingKopecks < b.depositInitialKopecks),
+    depositBookingId: order.depositBookingId,
     createdAt: order.createdAt.toISOString(),
     expiresAt: order.expiresAt?.toISOString() ?? null,
     paidAt: order.paidAt?.toISOString() ?? null,

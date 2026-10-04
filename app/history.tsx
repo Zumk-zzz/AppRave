@@ -56,13 +56,14 @@ export default function HistoryScreen() {
           {seesAll ? 'Проходы и выдачи всей команды' : 'Ваши подтверждённые проходы и выдачи'}
           {orderId ? ' по этому заказу' : '. Все смены'}
         </Text>
+        {seesAll && <Button label="Разобрать заказ по номеру" variant="outline" onPress={() => router.push('/order-audit')} />}
         <Button label={busy ? 'Загрузка…' : 'Обновить'} variant="outline" disabled={busy} onPress={() => void load()} />
         {error && <Text variant="body" tone="danger">{error}</Text>}
         {!busy && !error && items.length === 0 && <Text variant="body" tone="muted">Подтверждений пока нет.</Text>}
         {items.map((item) => <Card key={item.id} style={styles.card}>
           <View style={styles.heading}>
             <Text variant="bodyStrong" style={styles.flex}>{item.orderNumber ?? 'Заказ'}</Text>
-            <Badge label={item.kind === 'bar_issued' ? 'Выдано' : item.kind === 'bar_started' ? 'Готовится' : item.kind === 'bar_ready' ? 'Готово' : 'Вход'} tone="success" />
+            <Badge label={item.kind === 'bar_issued' ? 'Выдано' : item.kind === 'bar_started' ? 'Готовится' : item.kind === 'bar_ready' ? 'Готово' : item.kind === 'bar_transferred' ? 'Передано' : item.kind === 'table_updated' ? 'Столик' : 'Вход'} tone="success" />
           </View>
           <Text variant="body">{item.summary ?? 'Подтверждение выполнено'}</Text>
           <Text variant="bodyStrong">Выполнил: {item.actorName}</Text>

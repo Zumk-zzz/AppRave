@@ -29,7 +29,7 @@ try {
   const door = await worker('doorman', 'Фейсер QR');
   const bar1 = await worker('bartender', 'Бармен Первый');
   const bar2 = await worker('bartender', 'Бармен Второй');
-  const event = (await api('/events')).body.find((e) => e.tickets.some((t) => t.available > 10));
+  const event = (await api('/events')).body.find((e) => new Date(e.date).getTime() > Date.now()+24*3600000 && e.tickets.some((t) => t.available > 10));
   assert.ok(event, 'Нужно событие с билетами');
   const ticket = event.tickets.find((t) => t.available > 10);
   const drink = (await api('/bar/menu')).body.find((b) => b.available);

@@ -36,6 +36,7 @@ interface OrdersState {
   /** Заказ по номеру из QR. Для сканера: чужого заказа в кэше нет. */
   byNumber: (number: string) => Promise<Order | null>;
   refreshOne: (id: string) => Promise<void>;
+  spendDeposit: (id: string, barItemId: string, qty: number, requestId: string) => Promise<Order>;
   /** Отметить выбранное число проходов по основному или личному QR. */
   admit: (order: Order, manual?: boolean, qty?: number, ownerPresent?: boolean) => Promise<Order>;
   /** Выдать единицы позиции бара. */
@@ -46,6 +47,11 @@ interface OrdersState {
 }
 
 export const useOrdersStore = create<OrdersState>((set, get) => ({
+  async spendDeposit(id, barItemId, qty, requestId) {
+    const order = await ordersService.spendDeposit(id,barItemId,qty,requestId);
+    set({ orders: [order,...get().orders.filter((o) => o.id !== order.id)] });
+    return order;
+  },
   async refreshOne(id) { merge(set, get, await ordersService.byId(id)); },
   orders: [],
   staffOrders: [],

@@ -1,4 +1,4 @@
-import type { CheckoutItem, Order, OrdersService } from '@/src/services/types';
+import type { CheckoutItem, Order, OrdersService, OperationalTable } from '@/src/services/types';
 import { entryAvailable } from '@/src/lib/fulfillment';
 import { cached } from './cache';
 import { ApiError, request } from './client';
@@ -22,6 +22,15 @@ interface CreateBody {
 }
 
 export const apiOrdersService: OrdersService = {
+  barTeam: () => request('/staff/bar/team'),
+  async transferBar(order, lineId, toUserId, reason) {
+    await request(`/staff/bar/${lineId}/transfer`, { method: 'POST', body: { toUserId, reason, expectedAssignee: order.lines.find((l) => l.id === lineId)?.preparedById } });
+  },
+  async floor(eventId) { return (await request<ApiOperationalTable[]>(`/staff/tables?eventId=${encodeURIComponent(eventId)}`)).map(mapOperationalTable); },
+  async updateTable(table, state, responsibleId) { await request(`/staff/tables/${table.id}/state`, { method: 'POST', body: { state, responsibleId, expectedState: table.serviceState, confirmRemainingKopecks: Math.round(table.depositRemaining*100) } }); },
+  async tableBooking(id) { const booking = await request<ApiOperationalTable | null>(`/orders/${id}/table`); return booking ? mapOperationalTable(booking) : null; },
+  async spendDeposit(id, barItemId, qty, requestId) { return mapOrder(await request<ApiOrder>(`/orders/${id}/deposit/order`, { method: 'POST', body: { barItemId, qty, requestId } })); },
+  async timeline(number) { const data = await request<{ order: ApiOrder; rows: import('../types').OrderActivity[] }>(`/staff/orders/${encodeURIComponent(number)}/timeline`); return { order: mapOrder(data.order), rows: data.rows }; },
   async byId(id) { return mapOrder(await request<ApiOrder>(`/orders/${id}`)); },
   async requestBar(id) { return mapOrder(await request<ApiOrder>(`/orders/${id}/bar/request`, { method: 'POST', body: {} })); },
   async prepareBar(order, lineId) {
@@ -46,8 +55,8 @@ export const apiOrdersService: OrdersService = {
     });
   },
 
-  async forStaff(eventId) {
-    const query = eventId ? `?eventId=${encodeURIComponent(eventId)}` : '';
+  async forStaff(eventId, queueOnly = false) {
+    const query = eventId ? `?eventId=${encodeURIComponent(eventId)}${queueOnly ? '&queueOnly=true' : ''}` : '';
     const orders = await request<ApiOrder[]>(`/staff/orders${query}`);
     return orders.map(mapOrder);
   },
@@ -165,4 +174,14 @@ function toCreateBody(eventId: string, items: CheckoutItem[]): CreateBody {
 /** Ключ идемпотентности: живёт ровно одну попытку оформления. */
 function makeIdempotencyKey(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+interface ApiOperationalTable {
+  id: string; orderId: string; tableId: string; guests: string[]; serviceStatus: OperationalTable['serviceState'];
+  responsibleId?: string | null; responsibleName?: string | null; depositInitialKopecks: number; depositRemainingKopecks: number;
+  table?: { label: string }; order?: { number: string; user?: { name: string } };
+}
+function mapOperationalTable(t: ApiOperationalTable): OperationalTable {
+  return { id:t.id, orderId:t.orderId, tableId:t.tableId, label:t.table?.label ?? 'Стол', orderNumber:t.order?.number ?? '', guestName:t.order?.user?.name ?? '', guests:t.guests,
+    serviceState:t.serviceStatus, responsibleId:t.responsibleId ?? undefined, responsibleName:t.responsibleName ?? undefined, depositInitial:t.depositInitialKopecks/100, depositRemaining:t.depositRemainingKopecks/100 };
 }

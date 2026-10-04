@@ -21,3 +21,10 @@ export const BAR_STAGE_LABEL = {
 export function barProgress(line: OrderLine): string {
   return `Выдано ${line.redeemed} · готово ${line.readyQty ?? 0} · готовится ${line.preparingQty ?? 0}`;
 }
+
+export const TABLE_SERVICE_LABEL = { reserved: 'Забронирован', arrived: 'Гости пришли', occupied: 'Занят', released: 'Освобождён' };
+export function waitMinutes(line: OrderLine, now = Date.now()): number {
+  const start = (line.readyQty ?? 0) > 0 ? line.barReadyAt : line.barRequestedAt;
+  const date = start ? new Date(start).getTime() : now;
+  return Number.isFinite(date) ? Math.max(0, Math.floor((now - date) / 60000)) : 0;
+}

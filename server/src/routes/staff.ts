@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { lockShift, arrival, shiftReport } from '../lib/operations.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
@@ -83,6 +84,7 @@ export async function staffRoutes(app: FastifyInstance) {
       expectedRemaining: z.number().int().nonnegative().optional() }).parse(req.body ?? {});
 
     const result = await db.$transaction(async (tx) => {
+      await lockShift(tx, auth);
       // Все исполнения и отмены одного заказа выстраиваются в очередь.
       await tx.$queryRaw`SELECT id FROM orders WHERE number = ${number} FOR UPDATE`;
       const order = await tx.order.findUnique({ where: { number }, include: { lines: true, user: true, event: true } });
@@ -116,6 +118,7 @@ export async function staffRoutes(app: FastifyInstance) {
 
       if (count > 0) {
         if (ownerPresent) await recordVisit(tx, order.userId, order.eventId!);
+        await arrival(tx, order.id);
         await tx.order.update({ where: { id: order.id }, data: { usedAt: new Date() } });
         // Заказ закрывается, когда выдавать больше нечего: пересчёт
         // держим в той же транзакции, что и саму выдачу
@@ -143,6 +146,7 @@ export async function staffRoutes(app: FastifyInstance) {
       .parse(req.body);
 
     await db.$transaction(async (tx) => {
+      await lockShift(tx, auth);
       await tx.$queryRaw`SELECT id FROM orders WHERE number = ${number} FOR UPDATE`;
       const order = await tx.order.findUnique({ where: { number }, include: { lines: true, event: true } });
       if (!order) throw notFound('Заказ не найден');
@@ -166,9 +170,11 @@ export async function staffRoutes(app: FastifyInstance) {
         data: { redeemed: { increment: qty }, readyQty: { decrement: qty } },
       });
       await settleStatus(tx, order.id);
+      const readyActions = await tx.staffAction.findMany({ where: { orderId: order.id, kind: 'bar_ready' }, include: { actor: { select: { name: true } } } });
+      const preparedBy = [...new Set(readyActions.filter((a) => (a.details as Record<string,unknown>)?.lineId === lineId).map((a) => a.actor.name))].join(', ') || line.preparedByName;
       await tx.staffAction.create({ data: {
         actorId: auth.sub, shiftId: auth.shiftId, orderId: order.id, kind: 'bar_issued',
-        details: { number, item: line.title, lineId, qty, preparedBy: line.preparedByName },
+        details: { number, item: line.title, lineId, qty, preparedBy },
       } });
     });
 
@@ -210,29 +216,34 @@ export async function staffRoutes(app: FastifyInstance) {
 
   app.post('/staff/shift/close', async (req) => {
     const auth = requireUser(req);
-    const { note } = z.object({ note: z.string().max(500).optional() }).parse(req.body ?? {});
-
+    const { note, counts } = z.object({ note: z.string().max(500).optional(), counts: z.array(z.object({ barItemId: z.string(), actual: z.number().int().min(0), available: z.number().int(), reserved: z.number().int().min(0), reason: z.string().trim().max(300).default('') })).max(500).optional() }).parse(req.body ?? {});
     const open = await db.shift.findFirst({ where: { userId: auth.sub, closedAt: null } });
     if (!open) throw conflict('Открытой смены нет', 'no_shift');
-
-    const shift = await db.shift.update({
-      where: { id: open.id },
-      data: { closedAt: new Date(), note },
-    });
-
-    await logAction(auth.sub, 'shift_closed', { shiftId: shift.id });
-
-    // Итоги смены: что сотрудник успел за ночь
-    const actions = await db.staffAction.groupBy({
-      by: ['kind'],
-      where: { actorId: auth.sub, createdAt: { gte: shift.openedAt } },
-      _count: true,
-    });
-
-    return {
-      ...toShiftDto(shift),
-      summary: Object.fromEntries(actions.map((a) => [a.kind, a._count])),
-    };
+    try {
+      return await db.$transaction(async (tx) => {
+        await lockShift(tx, { ...auth, shiftId: open.id });
+        const shift = await tx.shift.findUniqueOrThrow({ where: { id: open.id } });
+        const report = await shiftReport(tx, shift, auth.staffRole);
+        if (report.pendingPreparations > 0) throw conflict('Передайте незавершённые позиции другому бармену или закончите приготовление', 'pending_preparations');
+        if (counts) {
+          if (!canNow(auth.staffRole, true, 'stock:write')) throw forbidden('Сверка доступна сотрудникам бара');
+          if (new Set(counts.map((c) => c.barItemId)).size !== counts.length) throw conflict('Позиции сверки повторяются', 'duplicate_counts');
+          for (const count of counts) {
+            const row = report.stock.find((r) => r.barItemId === count.barItemId);
+            if (!row || row.available !== count.available || row.reserved !== count.reserved) throw conflict('Остатки изменились. Обновите отчёт и пересчитайте', 'stale_inventory');
+            if (count.actual !== row.expected && count.reason.length < 3) throw conflict('Укажите причину каждого расхождения', 'variance_reason_required');
+            row.actual = count.actual; row.difference = count.actual - row.expected; row.reason = count.reason;
+          }
+        }
+        const closedAt = new Date(); report.closedAt = closedAt.toISOString(); report.saved = true;
+        const closed = await tx.shift.update({ where: { id: shift.id }, data: { closedAt, note, report: report as Prisma.InputJsonValue } });
+        await tx.staffAction.create({ data: { actorId: auth.sub, shiftId: shift.id, kind: 'shift_closed', details: { reconciled: counts?.length ?? 0, variances: report.stock.filter((r) => r.difference !== null && r.difference !== 0).length } } });
+        return { ...toShiftDto(closed), report };
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') throw conflict('Данные изменились. Обновите отчёт', 'stale_inventory');
+      throw error;
+    }
   });
 
   /**
@@ -284,8 +295,8 @@ export async function staffRoutes(app: FastifyInstance) {
     }).parse(req.query);
     const all = canNow(auth.staffRole, !!auth.shiftId, 'orders:read');
     const kinds: Prisma.EnumStaffActionKindFilter['in'] = auth.role === 'bartender'
-      ? ['bar_issued', 'bar_started', 'bar_ready'] : auth.role === 'doorman'
-        ? ['entry_admitted', 'entry_manual'] : ['bar_issued', 'bar_started', 'bar_ready', 'entry_admitted', 'entry_manual'];
+      ? ['bar_issued', 'bar_started', 'bar_ready', 'bar_transferred'] : auth.role === 'doorman'
+        ? ['entry_admitted', 'entry_manual'] : ['bar_issued', 'bar_started', 'bar_ready', 'bar_transferred', 'table_updated', 'entry_admitted', 'entry_manual'];
     const rows = await db.staffAction.findMany({
       where: { kind: { in: kinds }, ...(!all ? { actorId: auth.sub } : {}), ...(orderId ? { orderId } : {}) },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
@@ -469,16 +480,19 @@ export async function staffRoutes(app: FastifyInstance) {
       throw forbidden('Список заказов недоступен для вашей роли');
     }
 
-    const { eventId } = z.object({ eventId: z.string().optional() }).parse(req.query);
+    const { eventId, queueOnly } = z.object({ eventId: z.string().optional(), queueOnly: z.enum(['true','false']).optional() }).parse(req.query);
+    const queue = queueOnly === 'true';
+    if (queue && !eventId) throw badRequest('Выберите вечеринку', 'event_required');
 
     const orders = await db.order.findMany({
       where: {
         ...(eventId ? { eventId } : {}),
+        ...(queue ? { lines: { some: { kind: 'bar' as const, barRequestedAt: { not: null } } } } : {}),
         status: { in: ['paid', 'used'] },
       },
       include: { lines: true, event: true, bookings: true, user: true },
-      orderBy: { createdAt: 'desc' },
-      take: 500,
+      orderBy: { createdAt: queue ? 'asc' : 'desc' },
+      ...(queue ? {} : { take: 500 }),
     });
 
     // Контакт гостя видит тот, кому он нужен по работе: фейсер вносит
@@ -486,7 +500,7 @@ export async function staffRoutes(app: FastifyInstance) {
     // для выдачи напитка достаточно имени.
     const seesContact = may('scan:entry') || may('orders:read');
 
-    return orders.map((o) => staffOrder(o, auth)).filter((o) => o.lines.length > 0).map((o) => ({
+    return orders.map((o) => staffOrder(o, auth)).filter((o) => o.lines.length > 0 && (!queue || o.lines.some((l) => l.kind === 'bar' && l.barRequestedAt && leftOf(l) > 0))).map((o) => ({
       ...toOrderDto(o),
       guest: {
         name: o.user.name,

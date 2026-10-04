@@ -170,6 +170,8 @@ interface ApiOrderLine {
   entryRedeemed?: number;
   entryReserved?: number;
   barRequestedAt?: string | null;
+  preparingStartedAt?: string | null;
+  barReadyAt?: string | null;
   preparingQty?: number;
   readyQty?: number;
   preparedById?: string | null;
@@ -182,6 +184,8 @@ interface ApiOrder {
   number: string;
   status: 'draft' | 'pending' | 'paid' | 'expired' | 'cancelled' | 'refunded' | 'used';
   totalKopecks: number;
+  depositUsedKopecks?: number;
+  depositCommitted?: boolean;
   pointsEarned: number;
   createdAt: string;
   expiresAt: string | null;
@@ -221,6 +225,8 @@ export function mapOrder(o: ApiOrder): Order {
     status: STATUS[o.status],
     qrPayload: o.qrPayload,
     invitationToken: o.invitationToken,
+    depositUsed: (o.depositUsedKopecks ?? 0)/100,
+    depositCommitted: o.depositCommitted,
     guest: o.guest ? { name: o.guest.name, contact: o.guest.contact ?? undefined } : undefined,
   };
 }
@@ -241,6 +247,8 @@ function mapOrderLine(l: ApiOrderLine): OrderLine {
     entryRedeemed: l.entryRedeemed ?? 0,
     entryReserved: l.entryReserved ?? 0,
     barRequestedAt: l.barRequestedAt ?? undefined,
+    preparingStartedAt: l.preparingStartedAt ?? undefined,
+    barReadyAt: l.barReadyAt ?? undefined,
     preparingQty: l.preparingQty ?? 0,
     readyQty: l.readyQty ?? 0,
     preparedById: l.preparedById ?? undefined,
