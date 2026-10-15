@@ -1,3 +1,5 @@
+import { initializeTelegram } from '@/src/services/telegram';
+import { AlertHost } from '@/src/components/AppAlert';
 import { Inter_400Regular } from '@expo-google-fonts/inter/400Regular';
 import { Inter_500Medium } from '@expo-google-fonts/inter/500Medium';
 import { Inter_600SemiBold } from '@expo-google-fonts/inter/600SemiBold';
@@ -37,6 +39,7 @@ SplashScreen.preventAutoHideAsync();
 void initNotifications();
 
 export default function RootLayout() {
+  useEffect(() => { initializeTelegram(); }, []);
   const [fontsLoaded, fontError] = useFonts({
     Unbounded_500Medium,
     Unbounded_700Bold,
@@ -120,6 +123,7 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
+      <AlertHost />
       <Stack
         screenOptions={{
           headerShown: false,
@@ -134,6 +138,7 @@ export default function RootLayout() {
 
         <Stack.Protected guard={isAuthed}>
           <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="payment/[id]" />
           <Stack.Screen name="event/[id]" options={{ animation: 'slide_from_right' }} />
         </Stack.Protected>
 

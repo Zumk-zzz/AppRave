@@ -1,7 +1,8 @@
+import { Alert } from '@/src/components/AppAlert';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 
 import { Badge, Button, Card, OfflineNotice, Screen, Text } from '@/src/components';
@@ -130,6 +131,7 @@ export default function TicketScreen() {
       )}
 
       {!!order.depositUsed && <Text variant="body" tone="accent">Оплачено из депозита: {formatPrice(order.depositUsed)}</Text>}
+      {order.status === 'pending' && <Button label="Перейти к оплате" onPress={() => router.push({pathname:'/payment/[id]',params:{id:order.id}})} />}
       <FulfillmentPanel order={order} />
       <Card style={styles.details}>
         {ticketLines.length > 0 && (

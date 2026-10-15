@@ -26,7 +26,7 @@ interface OrdersState {
   loadStaff: (eventId?: string) => Promise<void>;
 
   /** Превратить корзину в заказы — по одному на каждую вечеринку. */
-  checkout: (items: CartItem[], events: ClubEvent[], user: User) => Promise<Order[]>;
+  checkout: (items: CartItem[], events: ClubEvent[], user: User, options?: import('@/src/services').CheckoutOptions) => Promise<Order[]>;
 
   /** Отмена заказа гостем: билет перестаёт пускать на вход. */
   cancel: (orderId: string) => Promise<void>;
@@ -78,8 +78,8 @@ export const useOrdersStore = create<OrdersState>((set, get) => ({
     }
   },
 
-  async checkout(items, events, user) {
-    const created = await ordersService.checkout(items.map(toCheckoutItem), events, user);
+  async checkout(items, events, user, options) {
+    const created = await ordersService.checkout(items.map(toCheckoutItem), events, user, options);
 
     // Напоминание ставится после создания заказа: до этого у него нет id
     for (const order of created) {

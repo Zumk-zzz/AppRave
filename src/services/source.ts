@@ -1,4 +1,5 @@
 import Constants from 'expo-constants';
+import appConfig from '@/app.json';
 
 export type DataSource = 'mock' | 'api';
 
@@ -13,7 +14,7 @@ export type DataSource = 'mock' | 'api';
  * поднятого сервера. Переключается в app.json: extra.dataSource.
  */
 let current: DataSource =
-  Constants.expoConfig?.extra?.dataSource === 'api' ? 'api' : 'mock';
+  (Constants.expoConfig?.extra?.dataSource ?? process.env.EXPO_PUBLIC_APPRAVE_DATA_SOURCE ?? appConfig.expo.extra.dataSource) === 'api' ? 'api' : 'mock';
 
 export function getDataSource(): DataSource {
   return current;

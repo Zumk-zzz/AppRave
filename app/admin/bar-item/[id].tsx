@@ -1,7 +1,8 @@
+import { Alert } from '@/src/components/AppAlert';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Alert, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { Button, Field, NumberField, Screen, Segmented, Toggle } from '@/src/components';
 import { CATEGORY_LABEL, CATEGORY_ORDER } from '@/src/data/bar';

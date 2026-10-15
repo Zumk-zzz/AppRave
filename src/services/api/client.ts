@@ -1,5 +1,6 @@
 import Constants from 'expo-constants';
-import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
+import * as SecureStore from '@/src/services/session-storage';
 
 import { clearCache } from './cache';
 import { ApiError, NetworkError } from './errors';
@@ -19,8 +20,13 @@ const TOKEN_KEY = 'apprave.token';
  * означает сам телефон, а не компьютер разработчика.
  */
 function resolveBaseUrl(): string {
-  const configured = Constants.expoConfig?.extra?.apiUrl;
+  const configured = Constants.expoConfig?.extra?.apiUrl || (Platform.OS === 'web' ? process.env.EXPO_PUBLIC_APPRAVE_API_URL : undefined);
   if (typeof configured === 'string' && configured.length > 0) return configured;
+
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    const host = window.location.hostname;
+    if (!['localhost', '127.0.0.1', '[::1]'].includes(host)) return `${window.location.origin}/api`;
+  }
 
   const hostUri = Constants.expoConfig?.hostUri ?? Constants.expoGoConfig?.debuggerHost;
   const host = hostUri?.split(':')[0];

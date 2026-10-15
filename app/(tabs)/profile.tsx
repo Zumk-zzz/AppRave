@@ -1,8 +1,10 @@
+import { telegramInitData } from '@/src/services/telegram';
+import { Alert } from '@/src/components/AppAlert';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
-import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Badge, Button, Card, Screen, SectionHeader, Sheet, Text, Toggle } from '@/src/components';
 import { ContactsCard } from '@/src/features/profile/ContactsCard';
@@ -18,6 +20,9 @@ import { colors, radius, spacing } from '@/src/theme';
 
 export default function ProfileTab() {
   const router = useRouter();
+  const linkTelegram=useAuthStore(s=>s.linkTelegram);
+  const [telegram,setTelegram]=useState<string|null>(null),[linking,setLinking]=useState(false);
+  useEffect(()=>{setTelegram(telegramInitData());},[]);
   const user = useAuthStore((s) => s.user);
   const signOut = useAuthStore((s) => s.signOut);
   const orderCount = useOrdersStore((s) => s.orders.length);
@@ -140,6 +145,10 @@ export default function ProfileTab() {
       )}
 
       <ContactsCard />
+      {telegram&&<Button label="Привязать этот Telegram к моему аккаунту" variant="outline" loading={linking} disabled={linking} onPress={()=>{
+        setLinking(true);void linkTelegram(telegram).then(()=>Alert.alert('Telegram привязан','Вход через Telegram будет открывать этот же аккаунт и заказы.')).catch(e=>Alert.alert('Не удалось привязать',e.message)).finally(()=>setLinking(false));
+      }}/>}
+
 
       <View style={styles.menu}>
         {staffRole && <Row icon="time-outline" label="История выполнения"

@@ -1,7 +1,8 @@
+import { Alert } from '@/src/components/AppAlert';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useState } from 'react';
-import { Alert, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { Badge, Button, Card, Field, Screen, SectionHeader, Segmented, Sheet, Text } from '@/src/components';
 import { AdminHeader } from '@/src/features/admin/AdminHeader';

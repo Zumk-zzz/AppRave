@@ -1,6 +1,7 @@
+import { Alert } from '@/src/components/AppAlert';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { Badge, Button, Card, Field, Screen, Text } from '@/src/components';
 import { formatPrice } from '@/src/lib/format';
 import { staffService, type ShiftReport, type InventoryCount } from '@/src/services';

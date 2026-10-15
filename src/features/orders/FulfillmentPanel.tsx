@@ -1,7 +1,8 @@
+import { Alert } from '@/src/components/AppAlert';
 import { useRouter, useFocusEffect } from 'expo-router';
 import * as Linking from 'expo-linking';
 import { useCallback, useRef, useState } from 'react';
-import { Alert, AppState, Share, StyleSheet, View } from 'react-native';
+import { AppState, Share, StyleSheet, View } from 'react-native';
 import { Badge, Button, Card, Field, Sheet, Stepper, Text } from '@/src/components';
 import { barProgress, barStage, BAR_STAGE_LABEL, entryAvailable, entryTotal, entryUsed, waitMinutes, TABLE_SERVICE_LABEL } from '@/src/lib/fulfillment';
 import { barService, ordersService, type EntryInvitation, type Order, type OperationalTable, type BarItem } from '@/src/services';

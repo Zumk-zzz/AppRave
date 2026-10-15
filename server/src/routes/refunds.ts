@@ -69,6 +69,7 @@ export async function refundRoutes(app: FastifyInstance) {
       throw conflict('Название не совпадает — возврат не выполнен', 'confirm_mismatch');
     }
 
+    if (await db.payment.count({ where: { provider: { not: 'stub' }, order: { eventId: id } } })) throw conflict('Банковские возвраты требуют подключения API возврата и кассы. Демонстрационный возврат отключён', 'bank_refund_not_configured');
     const orders = await refundable(id);
     let refunded = 0;
     let totalKopecks = 0;

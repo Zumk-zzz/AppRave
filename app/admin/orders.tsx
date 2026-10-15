@@ -1,9 +1,10 @@
+import { Alert } from '@/src/components/AppAlert';
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import * as Haptics from 'expo-haptics';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { Alert, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { Badge, Button, Card, Screen, SectionHeader, Segmented, Sheet, Text } from '@/src/components';
 import { AdminHeader } from '@/src/features/admin/AdminHeader';

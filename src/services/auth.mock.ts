@@ -39,6 +39,8 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * они знают только про интерфейс AuthService.
  */
 export const mockAuthService: AuthService = {
+  async linkTelegram() { throw new Error('Привязка Telegram доступна при подключении сервера'); },
+  async verifyTelegram() { throw new Error('Вход Telegram доступен при подключении сервера'); },
   async requestCode(contact) {
     await delay(700);
 

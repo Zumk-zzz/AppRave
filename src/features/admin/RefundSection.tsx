@@ -1,7 +1,8 @@
+import { Alert } from '@/src/components/AppAlert';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useCallback, useState } from 'react';
-import { Alert, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { Button, Card, Field, Sheet, Text } from '@/src/components';
 import { formatPrice, pluralWithCount } from '@/src/lib/format';

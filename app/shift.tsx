@@ -1,10 +1,11 @@
+import { Alert } from '@/src/components/AppAlert';
 import { Ionicons } from '@expo/vector-icons';
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import * as Haptics from 'expo-haptics';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Badge, Button, Card, Screen, SectionHeader, Text } from '@/src/components';
 import { staffService, type Shift } from '@/src/services';

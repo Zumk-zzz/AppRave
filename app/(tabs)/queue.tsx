@@ -1,6 +1,7 @@
+import { Alert } from '@/src/components/AppAlert';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
-import { Alert, AppState, StyleSheet, View } from 'react-native';
+import { AppState, StyleSheet, View } from 'react-native';
 import { Badge, Button, Card, Screen, Segmented, Sheet, Field, Stepper, Text } from '@/src/components';
 import { nearestEvent } from '@/src/lib/events';
 import { barProgress, waitMinutes } from '@/src/lib/fulfillment';

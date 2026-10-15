@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
 import { requireUser } from '../auth/guard.js';
+import { verifyTelegram } from '../lib/telegram.js';
 import { signToken } from '../auth/jwt.js';
 import { db } from '../db.js';
 import { env, showCodeInResponse } from '../env.js';
@@ -59,6 +60,36 @@ async function takeCode(destination: string, code: string): Promise<boolean> {
 }
 
 export async function authRoutes(app: FastifyInstance) {
+  app.post('/auth/telegram/link', async (req) => {
+    const auth = requireUser(req);
+    if (!env.TELEGRAM_BOT_TOKEN) throw conflict('Вход через Telegram ещё не подключён', 'telegram_not_configured');
+    const { initData } = z.object({ initData: z.string().min(1).max(10000) }).parse(req.body);
+    const identity = verifyTelegram(initData, env.TELEGRAM_BOT_TOKEN), telegramId = String(identity.id);
+    const user = await db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtext(${`telegram:${telegramId}`}))`;
+      const existing = await tx.user.findUnique({ where: { telegramId } });
+      if (existing && existing.id !== auth.sub) throw conflict('Telegram уже связан с другим аккаунтом. Автоматически объединять заказы нельзя', 'telegram_already_linked');
+      await tx.$queryRaw`SELECT id FROM users WHERE id=${auth.sub} FOR UPDATE`;
+      const current = await tx.user.findUniqueOrThrow({ where: { id: auth.sub } });
+      if (current.telegramId && current.telegramId !== telegramId) throw conflict('У аккаунта уже есть другой Telegram', 'telegram_already_linked');
+      return tx.user.update({ where: { id: auth.sub }, data: { telegramId } });
+    });
+    return publicUser(user);
+  });
+  app.post('/auth/telegram', async (req) => {
+    if (!env.TELEGRAM_BOT_TOKEN) throw conflict('Вход через Telegram ещё не подключён', 'telegram_not_configured');
+    const { initData } = z.object({ initData: z.string().min(1).max(10000) }).parse(req.body);
+    const identity = verifyTelegram(initData, env.TELEGRAM_BOT_TOKEN);
+    const telegramId = String(identity.id);
+    const user = await db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtext(${`telegram:${telegramId}`}))`;
+      const existing = await tx.user.findUnique({ where: { telegramId } });
+      if (existing) return existing;
+      const memberNo = await allocateMemberNo(async (candidate) => (await tx.user.count({ where: { memberNo: candidate } })) > 0, `telegram:${telegramId}`);
+      return tx.user.create({ data: { telegramId, role: 'guest', name: [identity.first_name, identity.last_name].filter(Boolean).join(' '), memberNo } });
+    });
+    return { token: signToken({ sub: user.id }), user: publicUser(user) };
+  });
   /**
    * Запрос кода на телефон или почту.
    *

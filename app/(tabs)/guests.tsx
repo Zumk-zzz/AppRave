@@ -1,8 +1,9 @@
+import { Alert } from '@/src/components/AppAlert';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { Alert, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { Badge, Button, Card, Field, Screen, Segmented, Sheet, Stepper, Toggle, Text } from '@/src/components';
 import { entryAvailable, entryTotal } from '@/src/lib/fulfillment';

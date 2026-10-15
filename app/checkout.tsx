@@ -1,13 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { Badge, Button, Card, Screen, Stepper, Text } from '@/src/components';
+import { Badge, Button, Card, Field, Screen, Stepper, Text } from '@/src/components';
 import { formatEventDate, formatPrice, pluralWithCount } from '@/src/lib/format';
-import { pointsForPurchase, tierForPoints } from '@/src/lib/loyalty';
-import { eventsService, type ClubEvent } from '@/src/services';
+import { pointsForPurchase } from '@/src/lib/loyalty';
+import { eventsService, ordersService, type ClubEvent } from '@/src/services';
 import { useAuthStore } from '@/src/store/auth';
 import { selectTotal, useCartStore, type CartItem } from '@/src/store/cart';
 import { useOrdersStore } from '@/src/store/orders';
@@ -23,9 +23,14 @@ export default function CheckoutScreen() {
   const clearCart = useCartStore((s) => s.clear);
 
   const user = useAuthStore((s) => s.user);
-  const patchUser = useAuthStore((s) => s.patchUser);
+  const refreshUser = useAuthStore((s) => s.refresh);
   const checkout = useOrdersStore((s) => s.checkout);
 
+  const [receiptEmail, setReceiptEmail] = useState(user?.email ?? '');
+  const requestId = useRef('');
+  const [mode,setMode] = useState<'stub'|'alfa_test'|null>(null);
+  useEffect(() => { void ordersService.paymentMode().then((m) => setMode(m.provider)).catch(() => setError('Не удалось проверить способ оплаты')); }, []);
+  useEffect(() => { requestId.current=''; }, [items,receiptEmail]);
   const [events, setEvents] = useState<ClubEvent[]>([]);
   const [paying, setPaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,27 +52,24 @@ export default function CheckoutScreen() {
   const points = user ? pointsForPurchase(total, user.tier) : 0;
 
   const handlePay = async () => {
-    if (!user || items.length === 0 || paying) return;
+    if (!user || items.length === 0 || paying || !mode) return;
 
     setPaying(true);
     setError(null);
 
     try {
-      const created = await checkout(items, events, user);
+      if ((mode !== 'stub' || receiptEmail.trim()) && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(receiptEmail.trim())) throw new Error('Введите email для электронного чека');
+      requestId.current ||= `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const created = await checkout(items, events, user, {receiptEmail:receiptEmail.trim()||undefined,requestId:requestId.current});
       if (created.length === 0) throw new Error('Заказ не создан');
 
-      const earned = created.reduce((sum, o) => sum + o.pointsEarned, 0);
-      const nextPoints = user.points + earned;
-
-      // Уровень пересчитывается тут же: иначе повышение заметят только
-      // после перезапуска, и начисление пойдёт по старой ставке.
-      patchUser({ points: nextPoints, tier: tierForPoints(nextPoints) });
+      await refreshUser();
       clearCart();
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
       // replace, а не push: возвращаться на пустую корзину незачем
-      router.replace({ pathname: '/ticket/[id]', params: { id: created[0].id } });
+      router.replace({ pathname: created[0].status === 'pending' ? '/payment/[id]' : '/ticket/[id]', params: { id: created[0].id } });
     } catch (e) {
       // Билеты могли разобрать, пока гость собирал корзину. Корзину не
       // чистим: пусть уберёт лишнее сам, а не собирает заново.
@@ -113,7 +115,8 @@ export default function CheckoutScreen() {
             </Text>
           </View>
           <Button
-            label={paying ? 'Обработка…' : `Оплатить ${formatPrice(total)}`}
+            label={paying ? 'Обработка…' : mode === 'alfa_test' ? 'Оформить и перейти к тестовой оплате' : `Оплатить ${formatPrice(total)}`}
+            disabled={!mode}
             size="lg"
             fullWidth
             loading={paying}
@@ -126,13 +129,14 @@ export default function CheckoutScreen() {
             </Text>
           )}
           <Text variant="caption" tone="faint" style={styles.demo}>
-            Демо-режим — деньги не списываются
+            {mode === 'alfa_test' ? 'Тестовый эквайринг Альфа-Банка. Реальная оплата и фискальные чеки пока не подключены.' : 'Демо-режим — деньги не списываются'}
           </Text>
         </View>
       }
     >
       <Header onBack={() => router.back()} title="Заказ" />
 
+      <Field label="Email для электронного чека" value={receiptEmail} onChangeText={setReceiptEmail} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} maxLength={254} hint="Адрес передадим кассе при подключении фискализации. Сейчас настоящий чек не формируется." />
       {groups.map(([eventId, lines]) => {
         const event = events.find((e) => e.id === eventId);
         const groupTotal = lines.reduce((sum, i) => sum + i.price * i.qty, 0);

@@ -1,6 +1,7 @@
 import { StatusBar } from 'expo-status-bar';
 import {
   ScrollView,
+  Platform,
   StyleSheet,
   View,
   type ScrollViewProps,
@@ -9,7 +10,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors, spacing } from '@/src/theme';
+import { colors, layout, spacing } from '@/src/theme';
 
 export interface ScreenProps {
   children: React.ReactNode;
@@ -39,7 +40,8 @@ export function Screen({
 }: ScreenProps) {
   const insets = useSafeAreaInsets();
 
-  const bodyStyle = [padded && styles.padded, style];
+  const desktopBody = Platform.OS === 'web' && padded ? styles.webBody : undefined;
+  const bodyStyle = [padded && styles.padded, desktopBody, style];
 
   return (
     <View style={styles.root}>
@@ -73,7 +75,7 @@ export function Screen({
       )}
 
       {footer && (
-        <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.md }]}>{footer}</View>
+        <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.md }, desktopBody]}>{footer}</View>
       )}
     </View>
   );
@@ -87,6 +89,7 @@ const styles = StyleSheet.create({
   flex: {
     flex: 1,
   },
+  webBody: { width: '100%', maxWidth: layout.contentMaxWidth, alignSelf: 'center' },
   padded: {
     paddingHorizontal: spacing.lg,
   },

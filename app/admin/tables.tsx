@@ -1,6 +1,7 @@
+import { Alert } from '@/src/components/AppAlert';
 import * as Haptics from 'expo-haptics';
 import { useState } from 'react';
-import { Alert, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import {
   Badge,

@@ -1,4 +1,7 @@
 import { LinearGradient } from 'expo-linear-gradient';
+import { useEffect, useState } from 'react';
+import { telegramInitData, initializeTelegram } from '@/src/services/telegram';
+import { useAuthStore } from '@/src/store/auth';
 import { useRouter } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 
@@ -8,6 +11,10 @@ import { colors, gradients, spacing } from '@/src/theme';
 /** Приветственный экран — первое, что видит незалогиненный пользователь. */
 export default function Welcome() {
   const router = useRouter();
+  const signInTelegram = useAuthStore((s) => s.signInTelegram);
+  const [telegram, setTelegram] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false), [error, setError] = useState('');
+  useEffect(() => { initializeTelegram(); setTelegram(telegramInitData()); }, []);
 
   return (
     <Screen>
@@ -33,6 +40,10 @@ export default function Welcome() {
       </View>
 
       <View style={styles.actions}>
+        {telegram && <Button label="Войти через Telegram" loading={busy} disabled={busy} onPress={() => {
+          setBusy(true); setError(''); void signInTelegram(telegram).catch((e) => setError(e instanceof Error ? e.message : 'Не удалось войти')).finally(() => setBusy(false));
+        }} />}
+        {!!error && <Text variant="caption" tone="danger">{error}</Text>}
         <Button
           label="Войти"
           size="lg"

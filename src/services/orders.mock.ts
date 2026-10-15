@@ -112,6 +112,10 @@ function requirePaid(order: Order) {
 }
 
 export const mockOrdersService: OrdersService = {
+  async paymentMode() { return {provider:'stub',testMode:true,fiscalization:'not_configured'}; },
+  async paymentForOrder() { return null; },
+  async startPayment() { throw new Error('В автономном режиме заказ оплачивается демонстрационно'); },
+  async paymentStatus() { throw new Error('Для банковской оплаты нужен сервер'); },
   async barTeam() { const { mockActiveBarWorkers } = await import('./staff.mock'); return mockActiveBarWorkers(); },
   async transferBar(order,lineId,toUserId,reason) {
     await requireWork('scan:bar');

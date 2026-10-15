@@ -14,6 +14,8 @@ import { pointsForPurchase, tierForPoints } from '../lib/money.js';
 
 const createSchema = z.object({
   eventId: z.string().min(1),
+  receiptEmail: z.string().trim().email().max(254).optional(),
+  expectedTotalKopecks: z.number().int().positive().optional(),
   tickets: z
     .array(z.object({ ticketTypeId: z.string().min(1), qty: z.number().int().min(1).max(10) }))
     .default([]),
@@ -46,11 +48,14 @@ export async function orderRoutes(app: FastifyInstance) {
       throw badRequest('Нужен заголовок Idempotency-Key', 'missing_idempotency_key');
     }
 
+    if (env.PAYMENT_PROVIDER !== 'stub' && !body.receiptEmail) throw badRequest('Укажите email для чека', 'receipt_email_required');
+
     // Повтор того же запроса возвращает исходный заказ, а не создаёт второй.
     // Спасает от двойного тапа по кнопке и от ретрая после обрыва сети.
     const existing = await db.idempotencyKey.findUnique({ where: { key: idempotencyKey } });
     if (existing) {
       const order = await loadOrder(existing.orderId);
+      if (existing.userId !== auth.sub) throw conflict('Ключ операции уже использован', 'key_used');
       if (order) return reply.code(200).send(order);
     }
 
@@ -148,6 +153,8 @@ export async function orderRoutes(app: FastifyInstance) {
           });
         }
 
+        if (body.expectedTotalKopecks !== undefined && body.expectedTotalKopecks !== total) throw conflict('Цены изменились — обновите корзину', 'price_changed');
+        if (!Number.isSafeInteger(total) || total <= 0 || total > 2147483647) throw badRequest('Недопустимая сумма заказа', 'invalid_amount');
         const user = await tx.user.findUniqueOrThrow({ where: { id: auth.sub } });
 
         const order = await tx.order.create({
@@ -156,6 +163,7 @@ export async function orderRoutes(app: FastifyInstance) {
             userId: user.id,
             eventId: event.id,
             status: 'pending',
+            receiptEmail: body.receiptEmail,
             totalKopecks: total,
             pointsEarned: pointsForPurchase(total, user.tier),
             expiresAt,
@@ -300,6 +308,7 @@ export async function orderRoutes(app: FastifyInstance) {
       if (!current || !['pending', 'paid'].includes(current.status)) {
         throw conflict('Этот заказ уже нельзя менять', 'not_cancellable');
       }
+      if (await tx.payment.count({ where: { orderId: order.id, provider: { not: 'stub' }, status: { in: ['created','succeeded'] } } })) throw conflict('Заказ уже передан банку. Дождитесь результата оплаты', 'payment_in_progress');
       const currentLine = await tx.orderLine.findUniqueOrThrow({ where: { id: lineId } });
       if (currentLine.kind === 'table' && await tx.tableBooking.count({ where: { orderId: order.id, depositOrders: { some: {} } } })) throw conflict('Депозит уже использован', 'deposit_used');
       if (currentLine.kind === 'table' && currentLine.entryRedeemed > 0) throw conflict('По брони уже прошли гости', 'entry_used');
@@ -430,6 +439,7 @@ export async function releaseOrder(orderId: string, status: 'cancelled' | 'expir
     const order = await tx.order.findUnique({ where: { id: orderId }, include: { lines: true } });
     if (!order) return;
     if (order.status !== 'pending' && order.status !== 'paid') return;
+    if (status === 'cancelled' && await tx.payment.count({ where: { orderId, provider: { not: 'stub' }, status: { in: ['created','succeeded'] } } })) throw conflict('Заказ уже передан банку. Дождитесь результата оплаты', 'payment_in_progress');
     if (status === 'cancelled' && await tx.tableBooking.count({ where: { orderId: order.id, depositOrders: { some: {} } } })) throw conflict('Депозит уже использован — обратитесь к сотруднику', 'deposit_used');
     if (status === 'cancelled' && order.lines.some((l) => l.entryRedeemed > 0 || l.barRequestedAt)) {
       throw conflict('Заказ уже обслуживается — обратитесь к сотруднику', 'fulfillment_started');

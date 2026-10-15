@@ -1,6 +1,7 @@
+import { Alert } from '@/src/components/AppAlert';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
-import { Alert, AppState, StyleSheet, View } from 'react-native';
+import { AppState, StyleSheet, View } from 'react-native';
 import { Badge, Button, Card, Screen, Sheet, Text } from '@/src/components';
 import { AdminHeader } from '@/src/features/admin/AdminHeader';
 import { nearestEvent } from '@/src/lib/events';

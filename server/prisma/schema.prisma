@@ -31,6 +31,7 @@ enum LoyaltyTier {
 }
 
 model User {
+  telegramId String? @unique @map("telegram_id")
   id        String      @id @default(uuid())
   /// Телефон и почта — равноправные каналы входа. Обязателен хотя бы один,
   /// но какой именно — не важно: аккаунт это человек, а не строка контакта.
@@ -250,6 +251,7 @@ model Order {
   eventId      String?     @map("event_id")
   status       OrderStatus @default(pending)
   totalKopecks Int         @map("total_kopecks")
+  receiptEmail String? @map("receipt_email")
   depositBookingId String? @map("deposit_booking_id")
   depositUsedKopecks Int @default(0) @map("deposit_used_kopecks")
   pointsEarned Int         @default(0) @map("points_earned")

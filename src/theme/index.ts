@@ -9,6 +9,7 @@
 export const colors = {
   /** Почти-чёрный фон приложения */
   bg: '#0A0A0B',
+  backdrop: 'rgba(0,0,0,0.5)',
   /** Карточки и панели поверх фона */
   surface: '#131316',
   /** Приподнятые поверхности: модалки, выделенные карточки */
@@ -116,3 +117,6 @@ export const theme = {
 } as const;
 
 export type Theme = typeof theme;
+
+/** Размеры рабочей области браузера. */
+export const layout = { desktopBreakpoint: 1024, contentMaxWidth: 1200, navigationWidth: 248, dialogMaxWidth: 640 } as const;

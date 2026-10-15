@@ -8,9 +8,10 @@
     "typecheck": "tsc --noEmit",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web",
+    "web": "node scripts/web.mjs start",
     "lint": "expo lint",
-    "test": "node scripts/order-status.test.mjs && node scripts/phone.test.mjs"
+    "test": "node scripts/order-status.test.mjs && node scripts/phone.test.mjs",
+    "build:web": "node scripts/web.mjs build"
   },
   "dependencies": {
     "@expo-google-fonts/inter": "^0.4.2",

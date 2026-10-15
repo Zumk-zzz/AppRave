@@ -185,7 +185,18 @@ export interface CheckoutItem {
  * одним действием стоит транзакция, которая возвращает товар в продажу,
  * и повторять эту логику на телефоне нельзя — копии разойдутся.
  */
+export interface PaymentSession {
+  provider: 'stub' | 'alfa_test'; providerId: string; amountKopecks: number; confirmationUrl: string | null;
+  expiresAt: string | null; receiptEmail: string | null; testMode: boolean;
+  cart: { currency: 'RUB'; amountKopecks: number; items: { id: string; name: string; qty: number; priceKopecks: number; amountKopecks: number }[] };
+  fiscalReceipt: { status: 'not_configured'; url: null };
+}
+export interface CheckoutOptions { receiptEmail?: string; requestId?: string }
 export interface OrdersService {
+  paymentMode(): Promise<{ provider: 'stub' | 'alfa_test'; testMode: boolean; fiscalization: string }>;
+  paymentForOrder(orderId: string): Promise<PaymentSession | null>;
+  startPayment(orderId: string): Promise<PaymentSession>;
+  paymentStatus(providerId: string): Promise<{ status: string; needsReview?: boolean; order: Order }>;
   barTeam(): Promise<BarWorker[]>;
   transferBar(order: Order, lineId: string, toUserId: string, reason: string): Promise<void>;
   floor(eventId: string): Promise<OperationalTable[]>;
@@ -208,7 +219,7 @@ export interface OrdersService {
    * Оформить корзину. Возвращает созданные заказы — по одному на вечеринку:
    * на входе сканируют один код за одну ночь, а не общий чек на все даты.
    */
-  checkout(items: CheckoutItem[], events: ClubEvent[], user: User): Promise<Order[]>;
+  checkout(items: CheckoutItem[], events: ClubEvent[], user: User, options?: CheckoutOptions): Promise<Order[]>;
   cancel(orderId: string): Promise<Order>;
   /** Отменить часть позиции: гость передумал брать один коктейль из трёх. */
   cancelLine(orderId: string, lineId: string, count: number): Promise<Order>;
@@ -528,6 +539,8 @@ export interface StaffService {
 }
 
 export interface AuthService {
+  verifyTelegram(initData: string): Promise<User>;
+  linkTelegram(initData: string): Promise<User>;
   /**
    * Отправить код на телефон или почту.
    *

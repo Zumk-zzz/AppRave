@@ -22,6 +22,13 @@ interface CreateBody {
 }
 
 export const apiOrdersService: OrdersService = {
+  paymentMode: () => request('/payments/config'),
+  paymentForOrder: (id) => request(`/orders/${encodeURIComponent(id)}/payment`),
+  startPayment: (orderId) => request('/payments', { method: 'POST', body: { orderId } }),
+  async paymentStatus(providerId) {
+    const data = await request<{status:string;needsReview?:boolean;order:ApiOrder}>(`/payments/${encodeURIComponent(providerId)}`);
+    return {...data,order:mapOrder(data.order)};
+  },
   barTeam: () => request('/staff/bar/team'),
   async transferBar(order, lineId, toUserId, reason) {
     await request(`/staff/bar/${lineId}/transfer`, { method: 'POST', body: { toUserId, reason, expectedAssignee: order.lines.find((l) => l.id === lineId)?.preparedById } });
@@ -72,7 +79,8 @@ export const apiOrdersService: OrdersService = {
     }
   },
 
-  async checkout(items) {
+  async checkout(items, _events, _user, options) {
+    const mode = await apiOrdersService.paymentMode();
     const created: Order[] = [];
 
     for (const [eventId, lines] of groupByEvent(items)) {
@@ -82,12 +90,12 @@ export const apiOrdersService: OrdersService = {
 
       const order = await request<ApiOrder>('/orders', {
         method: 'POST',
-        body: toCreateBody(eventId, lines),
+        body: { ...toCreateBody(eventId, lines), receiptEmail: options?.receiptEmail, expectedTotalKopecks: lines.reduce((sum,line) => sum+Math.round(line.price*100)*line.qty,0) },
         // Двойной тап по кнопке оплаты не создаст второй заказ
-        idempotencyKey: makeIdempotencyKey(),
+        idempotencyKey: options?.requestId ? `${options.requestId}:${eventId}` : makeIdempotencyKey(),
       });
 
-      created.push(mapOrder(await pay(order)));
+      created.push(mapOrder(mode.provider === 'stub' && order.status === 'pending' ? await pay(order) : order));
     }
 
     return created;

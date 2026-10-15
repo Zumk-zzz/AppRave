@@ -1,8 +1,8 @@
 import { BlurView } from 'expo-blur';
-import { Modal, Pressable, StyleSheet, View } from 'react-native';
+import { Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors, radius, spacing } from '@/src/theme';
+import { colors, layout, radius, spacing } from '@/src/theme';
 import { Text } from './Text';
 
 export interface SheetProps {
@@ -27,13 +27,13 @@ export function Sheet({ visible, onClose, title, children }: SheetProps) {
       onRequestClose={onClose}
       statusBarTranslucent
     >
-      <View style={styles.root}>
+      <View style={[styles.root, Platform.OS === 'web' && styles.webRoot]}>
         {/* Тап по затемнению закрывает шторку */}
         <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel="Закрыть">
           <BlurView intensity={24} tint="dark" style={StyleSheet.absoluteFill} />
         </Pressable>
 
-        <View style={[styles.sheet, { paddingBottom: insets.bottom + spacing.lg }]}>
+        <ScrollView style={[styles.sheet, Platform.OS === 'web' && styles.webSheet]} contentContainerStyle={{ paddingBottom: insets.bottom + spacing.lg }} keyboardShouldPersistTaps="handled">
           <View style={styles.grabber} />
           {title && (
             <Text variant="title" style={styles.title}>
@@ -41,22 +41,26 @@ export function Sheet({ visible, onClose, title, children }: SheetProps) {
             </Text>
           )}
           {children}
-        </View>
+        </ScrollView>
       </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  webRoot: { alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
+  webSheet: { width: '100%', maxWidth: layout.dialogMaxWidth, borderRadius: radius.lg },
   root: {
     flex: 1,
     justifyContent: 'flex-end',
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: colors.backdrop,
   },
   sheet: {
+    maxHeight: '90%',
+    flexGrow: 0,
     backgroundColor: colors.surfaceElevated,
     borderTopLeftRadius: radius.lg,
     borderTopRightRadius: radius.lg,

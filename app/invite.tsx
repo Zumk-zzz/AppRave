@@ -1,6 +1,7 @@
+import { Alert } from '@/src/components/AppAlert';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Alert, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { Button, Card, Field, Screen, Text } from '@/src/components';
 import { authService, ordersService, type InvitationPreview } from '@/src/services';

@@ -1,4 +1,4 @@
-import * as SecureStore from 'expo-secure-store';
+import * as SecureStore from '@/src/services/session-storage';
 import { create } from 'zustand';
 
 import { canNow, effectiveRole, type Permission, type UserRole } from '@/src/lib/permissions';
@@ -15,6 +15,8 @@ interface AuthState {
   user: User | null;
   /** Прочитать сессию с устройства. Вызывается один раз при старте. */
   restore: () => Promise<void>;
+  linkTelegram: (initData: string) => Promise<void>;
+  signInTelegram: (initData: string) => Promise<void>;
   signIn: (contact: string, code: string) => Promise<void>;
   /** Привязать второй способ входа к текущему аккаунту. */
   linkContact: (contact: string, code: string) => Promise<void>;
@@ -44,6 +46,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
     setActor(null);
     set({ user: null, status: 'guest' });
+  },
+
+  async linkTelegram(initData) {
+    const user = await authService.linkTelegram(initData); await persist(user); setActor(user); set({ user });
+  },
+  async signInTelegram(initData) {
+    const user = await authService.verifyTelegram(initData);
+    await persist(user); setActor(user); set({ user, status: 'authed' });
   },
 
   async signIn(contact, code) {

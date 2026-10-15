@@ -75,6 +75,8 @@ app.setErrorHandler((error, req, reply) => {
 // Кто выполняет запрос, выясняем до обработчика: роль и смена читаются
 // из базы, поэтому это асинхронно, а проверки прав в маршрутах должны
 // оставаться простыми и синхронными.
+app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_req, body, done) => { done(null, Object.fromEntries(new URLSearchParams(String(body)))); });
+
 app.addHook('preHandler', resolveAuth);
 
 app.get('/health', async () => {

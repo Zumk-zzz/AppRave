@@ -21,6 +21,11 @@ import {
 } from './mappers';
 
 export const apiAuthService: AuthService = {
+  async linkTelegram(initData) { return mapUser(await request<ApiUser>('/auth/telegram/link', { method:'POST',body:{initData} })); },
+  async verifyTelegram(initData) {
+    const data = await request<{ token: string; user: ApiUser }>('/auth/telegram', { method: 'POST', body: { initData }, anonymous: true });
+    await setToken(data.token); return mapUser(data.user);
+  },
   async requestCode(contact) {
     const res = await request<{
       sentTo: string;

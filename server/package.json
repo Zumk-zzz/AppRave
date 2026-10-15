@@ -26,7 +26,9 @@
     "smoke:rules": "node scripts/rules-smoke.mjs",
     "demo:clean": "node scripts/clean-test-events.mjs",
     "demo:points": "tsx scripts/recalc-points.mjs",
-    "smoke:operations": "node scripts/operations-smoke.mjs"
+    "smoke:operations": "node scripts/operations-smoke.mjs",
+    "test:payments": "node --import tsx scripts/payment-security.test.mjs",
+    "smoke:web-payments": "node --import tsx scripts/web-payments-smoke.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
