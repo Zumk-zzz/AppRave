@@ -23,6 +23,7 @@ export default function AdminDashboard() {
   const orders = useOrdersStore((s) => s.staffOrders);
   const loadStaff = useOrdersStore((s) => s.loadStaff);
   const canManageStaff = useCan('staff:manage');
+  const canManagePromos = useCan('promos:manage');
 
   useFocusEffect(
     useCallback(() => {
@@ -84,6 +85,7 @@ export default function AdminDashboard() {
       )}
 
       <View style={styles.sections}>
+        {canManagePromos && <Section icon="pricetag" title="Промокоды" hint="Скидки, сроки и лимиты" onPress={() => router.push('/admin/promos')} />}
         <Section icon="grid" title="Столики в зале" hint="Гости, обслуживание и остаток депозита" onPress={() => router.push('/admin/floor')} />
         <Section icon="search" title="Разбор заказа" hint="Полная история по номеру заказа" onPress={() => router.push('/order-audit')} />
         <Section

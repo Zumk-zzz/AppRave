@@ -1,3 +1,4 @@
+import { mockPromos } from './promos.mock';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { pointsForPurchase } from '@/src/lib/loyalty';
@@ -103,7 +104,11 @@ function scoped(order: Order): Order {
   const lines = order.lines.filter((line) => role === 'doorman' ? line.kind === 'ticket' || (line.kind === 'table' && !!line.entryIncluded) : line.kind === 'bar')
     .map((line) => line.kind === 'table' ? { ...line, kind: 'ticket' as const, price: 0, qty: line.entryIncluded ?? 0,
       redeemed: line.entryRedeemed ?? 0, cancelled: line.cancelled ? line.entryIncluded : 0, entryIncluded: 0, entryRedeemed: 0 } : line);
-  return { ...order, lines, total: lines.reduce((n, l) => n + l.price * (l.qty - (l.cancelled ?? 0)), 0),
+  return { ...order, lines,
+    subtotal: lines.reduce((n, l) => n + l.price * (l.qty - (l.cancelled ?? 0)), 0),
+    discount: lines.reduce((n, l) => n + (l.discount ?? 0), 0),
+    promoCode: lines.some(l => !!l.discount) ? order.promoCode : undefined,
+    total: lines.reduce((n, l) => n + l.price * (l.qty - (l.cancelled ?? 0)) - (l.discount ?? 0), 0),
     pointsEarned: 0, guest: order.guest ? { name: order.guest.name, contact: role === 'bartender' ? undefined : order.guest.contact } : undefined };
 }
 
@@ -112,6 +117,7 @@ function requirePaid(order: Order) {
 }
 
 export const mockOrdersService: OrdersService = {
+  previewPromo:mockPromos.quote,
   async paymentMode() { return {provider:'stub',testMode:true,fiscalization:'not_configured'}; },
   async paymentForOrder() { return null; },
   async startPayment() { throw new Error('В автономном режиме заказ оплачивается демонстрационно'); },
@@ -253,7 +259,10 @@ export const mockOrdersService: OrdersService = {
     return order ? scoped(order) : null;
   },
 
-  async checkout(items, events, user) {
+  async checkout(items, events, user, options) {
+    return serializeDeposit(async()=>{
+    const promo=options?.promoCode?await mockPromos.quote(items,options.promoCode):null;
+    if(promo&&options?.expectedPayableKopecks!==undefined&&promo.amountKopecks!==options.expectedPayableKopecks)throw new Error('Скидка изменилась — примените код заново');
     const tables = await mockCatalog.tables();
     // Один заказ на вечеринку: на входе сканируют один QR за одну ночь,
     // а не общий чек на несколько дат.
@@ -267,7 +276,8 @@ export const mockOrdersService: OrdersService = {
 
     for (const [eventId, lines] of byEvent) {
       const event = events.find((e) => e.id === eventId);
-      const total = lines.reduce((sum, i) => sum + i.price * i.qty, 0);
+      const subtotal = lines.reduce((sum, i) => sum + Math.round(i.price*100)*i.qty, 0)/100;
+      const total=subtotal-(promo?.discountKopecks??0)/100;
       const number = makeOrderNumber();
 
       created.push({
@@ -277,8 +287,8 @@ export const mockOrdersService: OrdersService = {
         eventId: event?.id,
         eventTitle: event?.title,
         eventDate: event?.date,
-        lines: lines.map((line, index) => ({ ...toOrderLine(line, `${number}-${index}`), entryIncluded: line.kind === 'table' ? tables.find((t) => t.id === line.refId)?.includedEntries ?? 0 : 0 })),
-        total,
+        lines: lines.map((line, index) => ({ ...toOrderLine(line, `${number}-${index}`), discount:(promo?.allocations[index]??0)/100, entryIncluded: line.kind === 'table' ? tables.find((t) => t.id === line.refId)?.includedEntries ?? 0 : 0 })),
+        total, subtotal,discount:(promo?.discountKopecks??0)/100,promoCode:promo?.code,
         pointsEarned: pointsForPurchase(total, user.tier),
         status: 'paid',
         qrPayload: `APPRAVE|${number}|${user.memberNo}|${event?.id ?? '-'}`,
@@ -302,7 +312,9 @@ export const mockOrdersService: OrdersService = {
       }
     }
 
+    if(promo)await mockPromos.consume(promo.id,created[0].id);
     return created;
+    });
   },
 
   async cancel(orderId) {
@@ -323,6 +335,7 @@ export const mockOrdersService: OrdersService = {
 
   async cancelLine(orderId, lineId, count) {
     const order = await own(orderId);
+    if(order.promoCode)throw new Error('Заказ с промокодом можно отменить только целиком');
     const line = order.lines.find((l) => l.id === lineId);
     if (!line) throw new Error('Позиция не найдена');
     if ((line.kind === 'table' && order.depositCommitted) || line.barRequestedAt || (line.entryRedeemed ?? 0) > 0) throw new Error('Позиция уже обслуживается');

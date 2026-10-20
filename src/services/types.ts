@@ -115,6 +115,7 @@ export interface OrderLine {
   title: string;
   subtitle?: string;
   price: number;
+  discount?:number;
   qty: number;
   guests?: string[];
   /**
@@ -156,6 +157,9 @@ export interface Order {
   /** Содержимое QR-кода — то, что сканируют на входе */
   qrPayload: string;
   invitationToken?: string;
+  subtotal?:number;
+  discount?:number;
+  promoCode?:string;
   depositUsed?: number;
   depositCommitted?: boolean;
   /**
@@ -191,8 +195,15 @@ export interface PaymentSession {
   cart: { currency: 'RUB'; amountKopecks: number; items: { id: string; name: string; qty: number; priceKopecks: number; amountKopecks: number }[] };
   fiscalReceipt: { status: 'not_configured'; url: null };
 }
-export interface CheckoutOptions { receiptEmail?: string; requestId?: string }
+export interface PromoRule {
+  code:string; title:string; kind:'percent'|'fixed'; value:number; scope:'tickets'|'bar'|'tickets_bar';active:boolean;
+  eventId:string|null;minSubtotalKopecks:number;maxUses:number|null;perUserLimit:number;startsAt:string|null;endsAt:string|null;
+}
+export interface Promo extends PromoRule {id:string;createdAt:string;used:number;reserved:number}
+export interface PromoQuote {code:string;subtotalKopecks:number;discountKopecks:number;amountKopecks:number;points:number;scope:PromoRule['scope']}
+export interface CheckoutOptions { receiptEmail?: string; requestId?: string;promoCode?:string;expectedPayableKopecks?:number }
 export interface OrdersService {
+  previewPromo(items:CheckoutItem[],code:string):Promise<PromoQuote>;
   paymentMode(): Promise<{ provider: 'stub' | 'alfa_test'; testMode: boolean; fiscalization: string }>;
   paymentForOrder(orderId: string): Promise<PaymentSession | null>;
   startPayment(orderId: string): Promise<PaymentSession>;
@@ -352,6 +363,9 @@ export type TableLayout = Omit<ClubTable, 'taken'>;
  * он берётся из времени на телефоне — и однажды совпал бы с чужим.
  */
 export interface AdminService {
+  promos():Promise<Promo[]>;
+  createPromo(rule:PromoRule):Promise<void>;
+  updatePromo(id:string,rule:PromoRule):Promise<void>;
   /**
    * Все вечеринки: черновики, афиша, прошедшие и отменённые.
    *
@@ -412,6 +426,8 @@ export interface RefundResult {
 // --- Смена, журнал, сотрудники, стоп-лист ---
 
 export type StaffActionKind =
+  | 'promo_created'
+  | 'promo_updated'
   | 'bar_transferred'
   | 'table_updated'
   | 'deposit_spent'

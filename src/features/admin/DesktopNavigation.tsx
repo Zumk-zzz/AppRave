@@ -8,8 +8,10 @@ export function DesktopNavigation() {
   const pathname = usePathname();
   const user = useAuthStore((s) => s.user);
   const staff = useCan('staff:manage');
+  const promos = useCan('promos:manage');
   const bar = useCan('scan:bar');
-  const entries: { href: '/admin' | '/admin/events' | '/admin/floor' | '/admin/orders' | '/admin/stock' | '/admin/bar' | '/admin/tables' | '/admin/analytics' | '/admin/staff' | '/order-audit' | '/shift' | '/history' | '/(tabs)/queue'; title: string; show?: boolean }[] = [
+  const entries: { href: '/admin/promos' | '/admin' | '/admin/events' | '/admin/floor' | '/admin/orders' | '/admin/stock' | '/admin/bar' | '/admin/tables' | '/admin/analytics' | '/admin/staff' | '/order-audit' | '/shift' | '/history' | '/(tabs)/queue'; title: string; show?: boolean }[] = [
+    { href: '/admin/promos', title: 'Промокоды', show: promos },
     { href: '/admin', title: 'Обзор' }, { href: '/admin/events', title: 'Вечеринки' },
     { href: '/admin/floor', title: 'Столики в зале' }, { href: '/admin/orders', title: 'Заказы' },
     { href: '/(tabs)/queue', title: 'Очередь бара', show: bar },

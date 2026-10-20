@@ -119,6 +119,8 @@ export const useStaffStore = create<StaffState>((set, get) => ({
 }));
 
 export const ACTION_LABEL: Record<StaffActionKind, string> = {
+  promo_created:'Промокод создан',
+  promo_updated:'Промокод изменён',
   bar_transferred: 'Передача приготовления',
   table_updated: 'Столик обновлён',
   deposit_spent: 'Использован депозит',

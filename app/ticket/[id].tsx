@@ -176,6 +176,7 @@ export default function TicketScreen() {
         )}
 
         <View style={styles.totals}>
+          {!!order.promoCode && <><Row left={`Промокод ${order.promoCode}`} right={`−${formatPrice(order.discount ?? 0)}`} accent /><Text variant="caption" tone="muted">Заказ с промокодом можно отменить только целиком по правилам отмены.</Text></>}
           <Row left="Оплачено" right={formatPrice(order.total)} strong />
           <Row left="Начислено баллов" right={`+${order.pointsEarned}`} accent />
         </View>

@@ -521,7 +521,10 @@ function staffOrder(order: OrderWithAll, auth: Auth): OrderWithAll {
     .map((line) => line.kind === 'table' ? { ...line, kind: 'ticket' as const, title: `${line.title} · вход`, priceKopecks: 0,
       qty: line.entryIncluded, redeemed: line.entryRedeemed, cancelledQty: line.cancelledQty > 0 ? line.entryIncluded : 0, entryIncluded: 0, entryRedeemed: 0 } : line);
   return { ...order, lines, bookings: [], pointsEarned: 0,
-    totalKopecks: lines.reduce((sum, line) => sum + line.priceKopecks * (line.qty - line.cancelledQty), 0),
+    subtotalKopecks: lines.reduce((sum, line) => sum + line.priceKopecks * (line.qty - line.cancelledQty), 0),
+    discountKopecks: lines.reduce((sum, line) => sum + line.discountKopecks, 0),
+    promoCode: lines.some(line => line.discountKopecks > 0) ? order.promoCode : null,
+    totalKopecks: lines.reduce((sum, line) => sum + line.priceKopecks * (line.qty - line.cancelledQty) - line.discountKopecks, 0),
   };
 }
 

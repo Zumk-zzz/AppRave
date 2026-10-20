@@ -22,6 +22,10 @@ interface CreateBody {
 }
 
 export const apiOrdersService: OrdersService = {
+  async previewPromo(items,code){
+    const groups=groupByEvent(items);if(groups.length!==1||!groups[0][0])throw new Error('Промокод применяется к корзине одной вечеринки');
+    return request('/orders/promo-preview',{method:'POST',body:{...toCreateBody(groups[0][0],groups[0][1]),promoCode:code}});
+  },
   paymentMode: () => request('/payments/config'),
   paymentForOrder: (id) => request(`/orders/${encodeURIComponent(id)}/payment`),
   startPayment: (orderId) => request('/payments', { method: 'POST', body: { orderId } }),
@@ -80,6 +84,7 @@ export const apiOrdersService: OrdersService = {
   },
 
   async checkout(items, _events, _user, options) {
+    if(options?.promoCode&&groupByEvent(items).length!==1)throw new Error('Промокод применяется к корзине одной вечеринки');
     const mode = await apiOrdersService.paymentMode();
     const created: Order[] = [];
 
@@ -90,7 +95,7 @@ export const apiOrdersService: OrdersService = {
 
       const order = await request<ApiOrder>('/orders', {
         method: 'POST',
-        body: { ...toCreateBody(eventId, lines), receiptEmail: options?.receiptEmail, expectedTotalKopecks: lines.reduce((sum,line) => sum+Math.round(line.price*100)*line.qty,0) },
+        body: { ...toCreateBody(eventId, lines), receiptEmail: options?.receiptEmail, promoCode:options?.promoCode,expectedPayableKopecks:options?.expectedPayableKopecks, expectedTotalKopecks: lines.reduce((sum,line) => sum+Math.round(line.price*100)*line.qty,0) },
         // Двойной тап по кнопке оплаты не создаст второй заказ
         idempotencyKey: options?.requestId ? `${options.requestId}:${eventId}` : makeIdempotencyKey(),
       });

@@ -5,12 +5,12 @@
  */
 export const rub = (rubles: number): number => Math.round(rubles * 100);
 
-export const TIER_RATE = { silver: 0.05, gold: 0.07, black: 0.1 } as const;
+export const TIER_RATE = { silver: 0.05, gold: 0.05, black: 0.05 } as const;
 
 export type Tier = keyof typeof TIER_RATE;
 
-export function pointsForPurchase(totalKopecks: number, tier: Tier): number {
-  return Math.floor((totalKopecks / 100) * TIER_RATE[tier]);
+export function pointsForPurchase(totalKopecks: number, _tier?: Tier): number {
+  return Math.floor(totalKopecks / 2000);
 }
 
 export function tierForPoints(points: number): Tier {

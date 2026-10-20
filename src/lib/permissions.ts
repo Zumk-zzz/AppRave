@@ -44,6 +44,7 @@ export type Permission =
    */
   | 'payments:refund'
   /** Выдавать и отзывать роли */
+  | 'promos:manage'
   | 'staff:manage'
   /** Покупать билеты и напитки. У персонала этого права нет. */
   | 'purchase';
@@ -68,6 +69,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
     'orders:read',
     'analytics:read',
     'staff:manage',
+    'promos:manage',
     'payments:refund',
   ],
 };

@@ -28,7 +28,8 @@
     "demo:points": "tsx scripts/recalc-points.mjs",
     "smoke:operations": "node scripts/operations-smoke.mjs",
     "test:payments": "node --import tsx scripts/payment-security.test.mjs",
-    "smoke:web-payments": "node --import tsx scripts/web-payments-smoke.mjs"
+    "smoke:web-payments": "node --import tsx scripts/web-payments-smoke.mjs",
+    "smoke:promos": "node --import tsx scripts/promos-smoke.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

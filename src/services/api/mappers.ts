@@ -162,6 +162,7 @@ interface ApiOrderLine {
   title: string;
   subtitle: string | null;
   priceKopecks: number;
+  discountKopecks?:number;
   qty: number;
   redeemed: number;
   cancelledQty: number;
@@ -184,6 +185,7 @@ interface ApiOrder {
   number: string;
   status: 'draft' | 'pending' | 'paid' | 'expired' | 'cancelled' | 'refunded' | 'used';
   totalKopecks: number;
+  subtotalKopecks?:number;discountKopecks?:number;promoCode?:string;
   depositUsedKopecks?: number;
   depositCommitted?: boolean;
   pointsEarned: number;
@@ -221,6 +223,9 @@ export function mapOrder(o: ApiOrder): Order {
     eventDate: o.event?.date,
     lines: o.lines.map(mapOrderLine),
     total: toRubles(o.totalKopecks),
+    subtotal:toRubles(o.subtotalKopecks??o.totalKopecks),
+    discount:toRubles(o.discountKopecks??0),
+    promoCode:o.promoCode,
     pointsEarned: o.pointsEarned,
     status: STATUS[o.status],
     qrPayload: o.qrPayload,
@@ -239,6 +244,7 @@ function mapOrderLine(l: ApiOrderLine): OrderLine {
     title: l.title,
     subtitle: l.subtitle ?? undefined,
     price: toRubles(l.priceKopecks),
+    discount:toRubles(l.discountKopecks??0),
     qty: l.qty,
     redeemed: l.redeemed,
     cancelled: l.cancelledQty,

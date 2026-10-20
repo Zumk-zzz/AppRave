@@ -1,3 +1,4 @@
+import { promoRoutes } from './routes/promos.js';
 import cors from '@fastify/cors';
 import Fastify from 'fastify';
 import { ZodError } from 'zod';
@@ -88,6 +89,7 @@ await app.register(authRoutes);
 await app.register(catalogRoutes);
 await app.register(adminRoutes);
 await app.register(orderRoutes);
+await app.register(promoRoutes);
 await app.register(paymentRoutes);
 await app.register(refundRoutes);
 await app.register(staffRoutes);

@@ -1,3 +1,4 @@
+import { mockPromos } from './promos.mock';
 import { mockCatalog } from './catalog.mock';
 import { mockRefund, refundSummary } from './orders.mock';
 import type { AdminService } from './types';
@@ -15,6 +16,7 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * различать их незачем. На сервере это разные операции.
  */
 export const mockAdminService: AdminService = {
+  promos:mockPromos.list,createPromo:mockPromos.create,updatePromo:mockPromos.update,
   async events() {
     await delay(200);
     return mockCatalog.events();

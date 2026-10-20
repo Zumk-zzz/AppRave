@@ -25,6 +25,9 @@ import type { ApiEvent, ApiStockItem, ApiStockMove, ApiTableLayout } from './map
  */
 
 export const apiAdminService: AdminService = {
+  promos:()=>request('/admin/promos'),
+  async createPromo(rule){await request('/admin/promos',{method:'POST',body:rule});},
+  async updatePromo(id,rule){await request(`/admin/promos/${id}`,{method:'PUT',body:rule});},
   async events() {
     const events = await request<ApiEvent[]>('/admin/events');
     return events.map(mapEvent);

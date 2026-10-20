@@ -1,3 +1,4 @@
+import { applicablePromo, promoDiscount } from '../lib/promos.js';
 import { Prisma } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -15,6 +16,8 @@ import { pointsForPurchase, tierForPoints } from '../lib/money.js';
 const createSchema = z.object({
   eventId: z.string().min(1),
   receiptEmail: z.string().trim().email().max(254).optional(),
+  promoCode: z.string().trim().min(3).max(32).optional(),
+  expectedPayableKopecks: z.number().int().positive().optional(),
   expectedTotalKopecks: z.number().int().positive().optional(),
   tickets: z
     .array(z.object({ ticketTypeId: z.string().min(1), qty: z.number().int().min(1).max(10) }))
@@ -155,6 +158,11 @@ export async function orderRoutes(app: FastifyInstance) {
 
         if (body.expectedTotalKopecks !== undefined && body.expectedTotalKopecks !== total) throw conflict('Цены изменились — обновите корзину', 'price_changed');
         if (!Number.isSafeInteger(total) || total <= 0 || total > 2147483647) throw badRequest('Недопустимая сумма заказа', 'invalid_amount');
+        const subtotalKopecks=total;
+        const promo=body.promoCode?await applicablePromo(tx,body.promoCode,auth.sub,event.id,true):null;
+        let discountKopecks=0;
+        if(promo){const result=promoDiscount(promo,lines.map(l=>({kind:l.kind,priceKopecks:l.priceKopecks,qty:l.qty??1})));discountKopecks=result.discountKopecks;lines.forEach((line,i)=>{line.discountKopecks=result.allocations[i];});total-=discountKopecks;}
+        if(body.expectedPayableKopecks!==undefined&&body.expectedPayableKopecks!==total)throw conflict('Скидка изменилась — примените код заново','promo_changed');
         const user = await tx.user.findUniqueOrThrow({ where: { id: auth.sub } });
 
         const order = await tx.order.create({
@@ -165,11 +173,14 @@ export async function orderRoutes(app: FastifyInstance) {
             status: 'pending',
             receiptEmail: body.receiptEmail,
             totalKopecks: total,
+            subtotalKopecks, discountKopecks, promoCode:promo?.code,
             pointsEarned: pointsForPurchase(total, user.tier),
             expiresAt,
             lines: { createMany: { data: lines } },
           },
         });
+
+        if(promo)await tx.promoUse.create({data:{promoId:promo.id,userId:auth.sub,orderId:order.id,amountKopecks:discountKopecks}});
 
         if (tableToBook && body.table) {
           // Двойную бронь ловит частичный уникальный индекс в базе.
@@ -309,6 +320,7 @@ export async function orderRoutes(app: FastifyInstance) {
         throw conflict('Этот заказ уже нельзя менять', 'not_cancellable');
       }
       if (await tx.payment.count({ where: { orderId: order.id, provider: { not: 'stub' }, status: { in: ['created','succeeded'] } } })) throw conflict('Заказ уже передан банку. Дождитесь результата оплаты', 'payment_in_progress');
+      if(current.promoCode)throw conflict('Заказ с промокодом можно отменить только целиком','promo_partial_cancel');
       const currentLine = await tx.orderLine.findUniqueOrThrow({ where: { id: lineId } });
       if (currentLine.kind === 'table' && await tx.tableBooking.count({ where: { orderId: order.id, depositOrders: { some: {} } } })) throw conflict('Депозит уже использован', 'deposit_used');
       if (currentLine.kind === 'table' && currentLine.entryRedeemed > 0) throw conflict('По брони уже прошли гости', 'entry_used');
@@ -491,6 +503,7 @@ export async function releaseOrder(orderId: string, status: 'cancelled' | 'expir
     });
 
     await tx.order.update({ where: { id: order.id }, data: { status, expiresAt: null } });
+    if(!order.paidAt)await tx.promoUse.updateMany({where:{orderId:order.id,state:'reserved'},data:{state:'released'}});
 
     // Баллы уходят вместе с покупкой. Иначе отмена превращается
     // в способ их накрутить: купил, получил начисление, отменил.
@@ -541,6 +554,7 @@ export function toLineDtos(order: OrderRow) {
     title: l.title,
     subtitle: l.subtitle,
     priceKopecks: l.priceKopecks,
+    discountKopecks: l.discountKopecks,
     qty: l.qty,
     redeemed: l.redeemed,
     cancelledQty: l.cancelledQty,
@@ -568,6 +582,9 @@ export function toOrderDto(order: OrderRow) {
     number: order.number,
     status: order.status,
     totalKopecks: order.totalKopecks,
+    subtotalKopecks: order.subtotalKopecks,
+    discountKopecks: order.discountKopecks,
+    promoCode: order.promoCode,
     pointsEarned: order.pointsEarned,
     depositUsedKopecks: order.depositUsedKopecks,
     depositCommitted: order.bookings.some((b) => b.depositRemainingKopecks < b.depositInitialKopecks),

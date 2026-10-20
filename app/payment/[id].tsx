@@ -46,7 +46,8 @@ export default function PaymentScreen() {
     <Badge label="Тестовая среда · реальные деньги не принимаются" tone="neutral" />
     {order&&<><Text variant="display">{order.number}</Text><Text variant="body">{order.eventTitle}</Text>
       <Card style={styles.content}>
-        {(payment?.cart.items ?? order.lines.filter(l=>l.qty>(l.cancelled??0)).map(l=>({id:l.id,name:l.title,qty:l.qty-(l.cancelled??0),amountKopecks:Math.round(l.price*100)*(l.qty-(l.cancelled??0))}))).map(l=><View key={l.id} style={styles.row}><Text variant="body">{l.name} × {l.qty}</Text><Text variant="bodyStrong">{formatPrice(l.amountKopecks/100)}</Text></View>)}
+        {(payment?.cart.items ?? order.lines.filter(l=>l.qty>(l.cancelled??0)).map(l=>({id:l.id,name:l.title,qty:l.qty-(l.cancelled??0),amountKopecks:Math.round(l.price*100)*(l.qty-(l.cancelled??0))-Math.round((l.discount??0)*100)}))).map(l=><View key={l.id} style={styles.row}><Text variant="body">{l.name} × {l.qty}</Text><Text variant="bodyStrong">{formatPrice(l.amountKopecks/100)}</Text></View>)}
+        {!!order.promoCode && <Text variant="caption" tone="accent">Промокод {order.promoCode}: −{formatPrice(order.discount ?? 0)}</Text>}
         <Text variant="title">Итого: {formatPrice(payment ? payment.amountKopecks/100 : order.total)}</Text>
         {payment?.receiptEmail&&<Text variant="caption">Email для чека: {payment.receiptEmail}</Text>}
       </Card>

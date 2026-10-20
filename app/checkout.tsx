@@ -7,7 +7,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { Badge, Button, Card, Field, Screen, Stepper, Text } from '@/src/components';
 import { formatEventDate, formatPrice, pluralWithCount } from '@/src/lib/format';
 import { pointsForPurchase } from '@/src/lib/loyalty';
-import { eventsService, ordersService, type ClubEvent } from '@/src/services';
+import { eventsService, ordersService, type ClubEvent, type PromoQuote } from '@/src/services';
 import { useAuthStore } from '@/src/store/auth';
 import { selectTotal, useCartStore, type CartItem } from '@/src/store/cart';
 import { useOrdersStore } from '@/src/store/orders';
@@ -34,6 +34,28 @@ export default function CheckoutScreen() {
   const [events, setEvents] = useState<ClubEvent[]>([]);
   const [paying, setPaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [promoCode, setPromoCode] = useState('');
+  const [quote, setQuote] = useState<{ key: string; value: PromoQuote } | null>(null);
+  const [checkingPromo, setCheckingPromo] = useState(false);
+  const quoteKey = JSON.stringify([items, promoCode.trim().toUpperCase()]);
+  const latestKey = useRef(quoteKey);
+  latestKey.current = quoteKey;
+  const activePromo = quote?.key === quoteKey ? quote.value : null;
+  const payable = activePromo ? activePromo.amountKopecks / 100 : total;
+  useEffect(() => { requestId.current = ''; }, [promoCode, quote]);
+
+  const applyPromo = async () => {
+    if (checkingPromo || paying) return;
+    setCheckingPromo(true);
+    setError(null);
+    const key = quoteKey;
+    try {
+      const value = await ordersService.previewPromo(items, promoCode.trim().toUpperCase());
+      if (latestKey.current === key) setQuote({ key, value });
+    } catch (e) {
+      if (latestKey.current === key) { setQuote(null); setError(e instanceof Error ? e.message : 'Не удалось проверить промокод'); }
+    } finally { setCheckingPromo(false); }
+  };
 
   useEffect(() => {
     void eventsService.list().then(setEvents);
@@ -49,10 +71,10 @@ export default function CheckoutScreen() {
     return [...map.entries()];
   }, [items]);
 
-  const points = user ? pointsForPurchase(total, user.tier) : 0;
+  const points = user ? activePromo?.points ?? groups.reduce((sum, [, lines]) => sum + pointsForPurchase(lines.reduce((s, i) => s + i.price * i.qty, 0), user.tier), 0) : 0;
 
   const handlePay = async () => {
-    if (!user || items.length === 0 || paying || !mode) return;
+    if (!user || items.length === 0 || paying || !mode || checkingPromo || (promoCode.trim() && !activePromo)) return;
 
     setPaying(true);
     setError(null);
@@ -60,7 +82,7 @@ export default function CheckoutScreen() {
     try {
       if ((mode !== 'stub' || receiptEmail.trim()) && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(receiptEmail.trim())) throw new Error('Введите email для электронного чека');
       requestId.current ||= `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      const created = await checkout(items, events, user, {receiptEmail:receiptEmail.trim()||undefined,requestId:requestId.current});
+      const created = await checkout(items, events, user, {receiptEmail:receiptEmail.trim()||undefined,requestId:requestId.current,promoCode:activePromo?.code,expectedPayableKopecks:activePromo?.amountKopecks});
       if (created.length === 0) throw new Error('Заказ не создан');
 
       await refreshUser();
@@ -100,23 +122,24 @@ export default function CheckoutScreen() {
       scroll
       footer={
         <View style={styles.footer}>
+          {activePromo && <View style={styles.footerRow}><Text variant="caption" tone="muted">Скидка · {activePromo.code}</Text><Text variant="caption" tone="accent">−{formatPrice(activePromo.discountKopecks / 100)}</Text></View>}
           <View style={styles.footerRow}>
             <Text variant="body" tone="muted">
               Итого
             </Text>
-            <Text variant="title">{formatPrice(total)}</Text>
+            <Text variant="title">{formatPrice(payable)}</Text>
           </View>
           <View style={styles.footerRow}>
             <Text variant="caption" tone="faint">
-              Начислим баллов
+              Начислим баллов · 5%
             </Text>
             <Text variant="caption" tone="accent">
               +{points}
             </Text>
           </View>
           <Button
-            label={paying ? 'Обработка…' : mode === 'alfa_test' ? 'Оформить и перейти к тестовой оплате' : `Оплатить ${formatPrice(total)}`}
-            disabled={!mode}
+            label={paying ? 'Обработка…' : mode === 'alfa_test' ? 'Оформить и перейти к тестовой оплате' : `Оплатить ${formatPrice(payable)}`}
+            disabled={!mode || checkingPromo || (!!promoCode.trim() && !activePromo)}
             size="lg"
             fullWidth
             loading={paying}
@@ -137,6 +160,11 @@ export default function CheckoutScreen() {
       <Header onBack={() => router.back()} title="Заказ" />
 
       <Field label="Email для электронного чека" value={receiptEmail} onChangeText={setReceiptEmail} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} maxLength={254} hint="Адрес передадим кассе при подключении фискализации. Сейчас настоящий чек не формируется." />
+      <View style={styles.group}>
+        <Field label="Промокод" value={promoCode} onChangeText={setPromoCode} editable={!paying} autoCapitalize="characters" autoCorrect={false} maxLength={32} hint={activePromo ? 'Скидка применена. Баллы начислим с суммы после скидки.' : 'Один промокод на заказ одной вечеринки. На депозит столика скидка не действует.'} />
+        <Button label={activePromo ? 'Убрать промокод' : 'Применить промокод'} variant="outline" loading={checkingPromo} disabled={paying || !promoCode.trim()} onPress={() => { if (activePromo) { setPromoCode(''); setQuote(null); } else void applyPromo(); }} />
+        {!!promoCode.trim() && !activePromo && <Text variant="caption" tone="muted">Примените промокод или очистите поле перед оплатой.</Text>}
+      </View>
       {groups.map(([eventId, lines]) => {
         const event = events.find((e) => e.id === eventId);
         const groupTotal = lines.reduce((sum, i) => sum + i.price * i.qty, 0);

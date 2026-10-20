@@ -34,23 +34,23 @@ export const TIER_THRESHOLD: Record<LoyaltyTier, number> = {
   black: 5000,
 };
 
-/** Доля от суммы заказа, которая возвращается баллами. Растёт с уровнем. */
+/** Доля от суммы заказа, которая возвращается баллами. Одинакова для всех уровней. */
 export const TIER_RATE: Record<LoyaltyTier, number> = {
   silver: 0.05,
-  gold: 0.07,
-  black: 0.1,
+  gold: 0.05,
+  black: 0.05,
 };
 
 export const TIER_PERKS: Record<LoyaltyTier, string[]> = {
   silver: ['5% от заказа возвращается баллами', 'Ранний доступ к афише', 'Бронь столика онлайн'],
   gold: [
-    '7% от заказа возвращается баллами',
+    '5% от заказа возвращается баллами',
     'Бесплатный гардероб',
     'Приоритет при брони столов',
     'Вход без очереди по будням',
   ],
   black: [
-    '10% от заказа возвращается баллами',
+    '5% от заказа возвращается баллами',
     'Персональный менеджер в чате',
     'Welcome-бутылка на VIP-столе',
     'Вход без очереди всегда',
@@ -60,9 +60,9 @@ export const TIER_PERKS: Record<LoyaltyTier, string[]> = {
 
 export const TIER_ORDER: LoyaltyTier[] = ['silver', 'gold', 'black'];
 
-/** Баллы за покупку — процент зависит от текущего уровня, округляем вниз. */
-export function pointsForPurchase(total: number, tier: LoyaltyTier): number {
-  return Math.floor(total * TIER_RATE[tier]);
+/** Баллы за покупку — единая ставка 5%, округляем вниз. */
+export function pointsForPurchase(total: number, _tier?: LoyaltyTier): number {
+  return Math.floor(Math.round(total * 100) / 2000);
 }
 
 /** Уровень, соответствующий накопленным баллам. */

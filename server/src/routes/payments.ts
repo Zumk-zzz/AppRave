@@ -41,6 +41,7 @@ async function complete(providerId: string, success: boolean) {
     const user = await tx.user.findUniqueOrThrow({ where: { id: order.userId } });
     const earned = pointsForPurchase(payment.amountKopecks, user.tier), nextPoints = user.points + earned;
     await tx.payment.update({ where: { id: payment.id }, data: { status: 'succeeded' } });
+    await tx.promoUse.updateMany({where:{orderId:order.id,state:'reserved'},data:{state:'used'}});
     await tx.order.update({ where: { id: order.id }, data: { status: 'paid', totalKopecks: payment.amountKopecks, paidAt: new Date(), expiresAt: null, pointsEarned: earned } });
     await tx.tableBooking.updateMany({ where: { orderId: order.id, status: 'pending' }, data: { status: 'paid' } });
     await tx.user.update({ where: { id: user.id }, data: { points: nextPoints, tier: tierForPoints(nextPoints) } });
